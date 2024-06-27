@@ -43,6 +43,7 @@ def test_unary() -> None:
     assert_compiles("-1")
     assert_compiles("+1")
     assert_compiles("~1")
+    assert_compiles("not 1")
 
 
 def test_power() -> None:
@@ -96,3 +97,12 @@ def test_compare() -> None:
     assert_compiles("1 is not 2")
     assert_compiles("1 < 2 < 3")
     assert_compiles("1 < 2 <= 3")
+
+
+def test_boolop() -> None:
+    assert_compiles("1 and 2")
+    assert_compiles("1 or 2")
+    assert_compiles("1 and 2 or 3")
+    assert_compiles("1 or 2 and 3")
+    assert_compiles("1 and 2 and 3 and 4")
+    assert_compiles("1 or 2 or 3 or 4")

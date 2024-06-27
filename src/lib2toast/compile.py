@@ -245,8 +245,11 @@ class Compiler(Visitor[ast.AST]):
                 # is not, not in
                 assert len(operator_node.children) == 2
                 if operator_node.children[0].value == "not":
+                    assert operator_node.children[1].value == "in"
                     operator = ast.NotIn()
                 else:
+                    assert operator_node.children[0].value == "is"
+                    assert operator_node.children[1].value == "not"
                     operator = ast.IsNot()
             ops.append(operator)
             right = self.visit(child)
@@ -254,6 +257,46 @@ class Compiler(Visitor[ast.AST]):
             comparators.append(right)
         return ast.Compare(
             left=left, ops=ops, comparators=comparators, **get_line_range(node)
+        )
+
+    def visit_star_expr(self, node: Node) -> ast.AST:
+        return ast.Starred(
+            value=self.visit(node.children[1]),
+            ctx=self.expr_context,
+            **get_line_range(node),
+        )
+
+    def visit_not_test(self, node: Node) -> ast.AST:
+        return ast.UnaryOp(
+            op=ast.Not(), operand=self.visit(node.children[1]), **get_line_range(node)
+        )
+
+    def visit_and_test(self, node: Node) -> ast.AST:
+        operands = []
+        for child in node.children[::2]:
+            operand = self.visit(child)
+            assert isinstance(operand, ast.expr)
+            operands.append(operand)
+        return ast.BoolOp(op=ast.And(), values=operands, **get_line_range(node))
+
+    def visit_or_test(self, node: Node) -> ast.AST:
+        operands = []
+        for child in node.children[::2]:
+            operand = self.visit(child)
+            assert isinstance(operand, ast.expr)
+            operands.append(operand)
+        return ast.BoolOp(op=ast.Or(), values=operands, **get_line_range(node))
+
+    def visit_test(self, node: Node) -> ast.AST:
+        # must be if-else
+        assert len(node.children) == 5
+        assert node.children[1].value == "if"
+        assert node.children[3].value == "else"
+        return ast.IfExp(
+            test=self.visit(node.children[2]),
+            body=self.visit(node.children[0]),
+            orelse=self.visit(node.children[4]),
+            **get_line_range(node),
         )
 
     def visit_factor(self, node: Node) -> ast.AST:
