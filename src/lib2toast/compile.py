@@ -2,8 +2,9 @@
 
 import ast
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Generic, TypeVar
+from typing import Callable, Dict, Generator, Generic, List, Sequence, Tuple, TypeVar
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
@@ -13,6 +14,7 @@ from typing_extensions import TypedDict
 
 pygram.initialize(cache_dir=None)
 
+syms = pygram.python_symbols
 
 T = TypeVar("T")
 
@@ -115,6 +117,19 @@ TOKEN_TYPE_TO_UNARY_OP = {
 
 
 class Compiler(Visitor[ast.AST]):
+    expr_context: ast.expr_context = ast.Load()
+
+    @contextmanager
+    def set_expr_context(
+        self, expr_context: ast.expr_context
+    ) -> Generator[None, None, None]:
+        old_expr_context = self.expr_context
+        self.expr_context = expr_context
+        try:
+            yield
+        finally:
+            self.expr_context = old_expr_context
+
     def visit_typevar(self, node: Node) -> ast.AST:
         if sys.version_info >= (3, 12):
             bound = None
@@ -208,6 +223,10 @@ class Compiler(Visitor[ast.AST]):
             )
         return op
 
+    visit_xor_expr = visit_and_expr = visit_shift_expr = visit_arith_expr = (
+        visit_term
+    ) = visit_expr
+
     def visit_factor(self, node: Node) -> ast.AST:
         return ast.UnaryOp(
             op=TOKEN_TYPE_TO_UNARY_OP[node.children[0].type](),
@@ -215,13 +234,188 @@ class Compiler(Visitor[ast.AST]):
             **get_line_range(node),
         )
 
-    visit_xor_expr = visit_and_expr = visit_shift_expr = visit_arith_expr = (
-        visit_term
-    ) = visit_expr
+    def visit_power(self, node: Node) -> ast.AST:
+        children = node.children
+        if len(children) > 2 and node.children[-2].type == token.DOUBLESTAR:
+            operand = self.visit(children[-1])
+            return ast.BinOp(
+                left=self._visit_power_without_power(children[:-2]),
+                op=ast.Pow(),
+                right=operand,
+                **get_line_range(node),
+            )
+        else:
+            return self._visit_power_without_power(children)
+
+    def _visit_power_without_power(self, children: Sequence[NL]) -> ast.AST:
+        if children[0].type == token.AWAIT:
+            line_range = unify_line_ranges(
+                get_line_range(children[0]), get_line_range(children[-1])
+            )
+            return ast.Await(
+                value=self._visit_power_without_await(children[1:]), **line_range
+            )
+        else:
+            return self._visit_power_without_await(children)
+
+    def _visit_power_without_await(self, children: Sequence[NL]) -> ast.AST:
+        atom = self.visit(children[0])
+        begin_range = get_line_range(children[0])
+        for trailer in children[1:]:
+            if trailer.children[0].type == token.LPAR:  # call
+                if len(trailer.children) == 2:
+                    args: list[ast.expr] = []
+                    keywords: list[ast.keyword] = []
+                else:
+                    args, keywords = self._compile_arglist(trailer.children[1], trailer)
+                atom = ast.Call(
+                    func=atom,
+                    args=args,
+                    keywords=keywords,
+                    **unify_line_ranges(
+                        begin_range, get_line_range(trailer.children[-1])
+                    ),
+                )
+            elif trailer.children[0].type == token.LSQB:  # subscript
+                subscript = self.visit(trailer.children[1])
+                atom = ast.Subscript(
+                    value=atom,
+                    slice=subscript,
+                    ctx=self.expr_context,
+                    **unify_line_ranges(
+                        begin_range, get_line_range(trailer.children[-1])
+                    ),
+                )
+            elif trailer.children[0].type == token.DOT:  # attribute
+                atom = ast.Attribute(
+                    value=atom,
+                    attr=trailer.children[1].value,
+                    ctx=self.expr_context,
+                    **unify_line_ranges(
+                        begin_range, get_line_range(trailer.children[1])
+                    ),
+                )
+            else:
+                raise NotImplementedError(repr(trailer))
+        return atom
+
+    def _compile_arglist(
+        self, node: NL, parent_node: Node
+    ) -> Tuple[List[ast.expr], List[ast.keyword]]:
+        if not isinstance(node, Node) or node.type != syms.arglist:
+            arguments = [node]
+        else:
+            arguments = node.children[::2]
+        args: list[ast.expr] = []
+        keywords: list[ast.keyword] = []
+        for argument in arguments:
+            if isinstance(argument, Leaf):
+                arg = self.visit(argument)
+                assert isinstance(arg, ast.expr)
+                args.append(arg)
+            elif argument.children[0].type == token.STAR:
+                args.append(
+                    ast.Starred(
+                        value=self.visit(argument.children[1]),
+                        ctx=ast.Load(),
+                        **get_line_range(argument),
+                    )
+                )
+            elif argument.children[0].type == token.DOUBLESTAR:
+                keywords.append(
+                    ast.keyword(
+                        arg=None,
+                        value=self.visit(argument.children[1]),
+                        **get_line_range(argument),
+                    )
+                )
+            elif len(argument.children) == 1:
+                expr = self.visit(argument.children[0])
+                assert isinstance(expr, ast.expr)
+                args.append(expr)
+            elif len(argument.children) == 2:
+                inner = self.visit(argument.children[0])
+                comps = self._compile_comprehension(argument.children[1])
+                args.append(
+                    ast.GeneratorExp(
+                        elt=inner, generators=comps, **get_line_range(parent_node)
+                    )
+                )
+            elif argument.children[1].type == token.COLONEQUAL:
+                with self.set_expr_context(ast.Store()):
+                    target = self.visit(argument.children[0])
+                if not isinstance(target, ast.Name):
+                    raise UnsupportedSyntaxError("walrus target must be a name")
+                value = self.visit(argument.children[2])
+                walrus = ast.NamedExpr(
+                    target=target,
+                    value=value,
+                    **unify_line_ranges(
+                        get_line_range(argument.children[0]),
+                        get_line_range(argument.children[2]),
+                    ),
+                )
+                if len(argument.children) > 3:
+                    comps = self._compile_comprehension(node.children[3])
+                    args.append(
+                        ast.GeneratorExp(
+                            elt=walrus, generators=comps, **get_line_range(parent_node)
+                        )
+                    )
+                else:
+                    args.append(walrus)
+            elif argument.children[1].type == token.EQUAL:
+                with self.set_expr_context(ast.Store()):
+                    target = self.visit(argument.children[0])
+                if not isinstance(target, ast.Name):
+                    raise UnsupportedSyntaxError(
+                        "keyword argument target must be a name"
+                    )
+                value = self.visit(argument.children[2])
+                keywords.append(
+                    ast.keyword(arg=target.id, value=value, **get_line_range(argument))
+                )
+            else:
+                raise NotImplementedError(repr(argument))
+        return args, keywords
+
+    def _compile_comprehension(self, node: Node) -> List[ast.comprehension]:
+        if node.children[0].type == token.ASYNC:
+            is_async = 1
+            children = node.children[1:]
+        else:
+            is_async = 0
+            children = node.children
+        if len(children) > 4:
+            ifs, comps = self._compile_comp_iter(children[4])
+        else:
+            ifs = []
+            comps = []
+        with self.set_expr_context(ast.Store()):
+            target = self.visit(children[1])
+        comp = ast.comprehension(
+            target=target, iter=self.visit(children[3]), ifs=ifs, is_async=is_async
+        )
+        return [comp, *comps]
+
+    def _compile_comp_iter(
+        self, node: Node
+    ) -> Tuple[List[ast.expr], List[ast.comprehension]]:
+        if node.children[0].value == "if":
+            test = self.visit(node.children[1])
+            assert isinstance(test, ast.expr)
+            if len(node.children) > 2:
+                ifs, comps = self._compile_comp_iter(node.children[2])
+            else:
+                ifs = []
+                comps = []
+            return [test, *ifs], comps
+        else:
+            return [], self._compile_comprehension(node)
 
     # Leaves
     def visit_NAME(self, leaf: Leaf) -> ast.AST:
-        return ast.Name(id=leaf.value, ctx=ast.Load(), **get_line_range(leaf))
+        return ast.Name(id=leaf.value, ctx=self.expr_context, **get_line_range(leaf))
 
     def visit_NUMBER(self, leaf: Leaf) -> ast.AST:
         return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))
