@@ -102,6 +102,8 @@ TOKEN_TYPE_TO_BINOP = {
     token.AMPER: ast.BitAnd,
     token.VBAR: ast.BitOr,
     token.CIRCUMFLEX: ast.BitXor,
+}
+TOKEN_TYPE_TO_COMPARE_OP = {
     token.EQEQUAL: ast.Eq,
     token.NOTEQUAL: ast.NotEq,
     token.LESS: ast.Lt,
@@ -109,6 +111,7 @@ TOKEN_TYPE_TO_BINOP = {
     token.LESSEQUAL: ast.LtE,
     token.GREATEREQUAL: ast.GtE,
 }
+NAME_TO_COMPARE_OP = {"is": ast.Is, "in": ast.In}
 TOKEN_TYPE_TO_UNARY_OP = {
     token.PLUS: ast.UAdd,
     token.MINUS: ast.USub,
@@ -226,6 +229,32 @@ class Compiler(Visitor[ast.AST]):
     visit_xor_expr = visit_and_expr = visit_shift_expr = visit_arith_expr = (
         visit_term
     ) = visit_expr
+
+    def visit_comparison(self, node: Node) -> ast.AST:
+        left = self.visit(node.children[0])
+        ops: list[ast.cmpop] = []
+        comparators: list[ast.expr] = []
+        for child_index in range(2, len(node.children), 2):
+            child = node.children[child_index]
+            operator_node = node.children[child_index - 1]
+            if operator_node.type == token.NAME:
+                operator = NAME_TO_COMPARE_OP[operator_node.value]()
+            elif isinstance(operator_node, Leaf):
+                operator = TOKEN_TYPE_TO_COMPARE_OP[operator_node.type]()
+            else:
+                # is not, not in
+                assert len(operator_node.children) == 2
+                if operator_node.children[0].value == "not":
+                    operator = ast.NotIn()
+                else:
+                    operator = ast.IsNot()
+            ops.append(operator)
+            right = self.visit(child)
+            assert isinstance(right, ast.expr)
+            comparators.append(right)
+        return ast.Compare(
+            left=left, ops=ops, comparators=comparators, **get_line_range(node)
+        )
 
     def visit_factor(self, node: Node) -> ast.AST:
         return ast.UnaryOp(

@@ -81,3 +81,18 @@ def test_call() -> None:
     assert_compiles("f(a for b in c if d for e in f if g)")
     assert_compiles("f(a async for b in c)")
     assert_compiles("f(a async for b in c for d in e)")
+
+
+def test_compare() -> None:
+    assert_compiles("1 < 2")
+    assert_compiles("1 <= 2")
+    assert_compiles("1 == 2")
+    assert_compiles("1 != 2")
+    assert_compiles("1 > 2")
+    assert_compiles("1 >= 2")
+    assert_compiles("1 in 2")
+    assert_compiles("1 not in 2")
+    assert_compiles("1 is 2")
+    assert_compiles("1 is not 2")
+    assert_compiles("1 < 2 < 3")
+    assert_compiles("1 < 2 <= 3")
