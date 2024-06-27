@@ -163,6 +163,12 @@ class Compiler(Visitor[ast.AST]):
     def visit_NAME(self, leaf: Leaf) -> ast.AST:
         return ast.Name(id=leaf.value, ctx=ast.Load(), **get_line_range(leaf))
 
+    def visit_NUMBER(self, leaf: Leaf) -> ast.AST:
+        return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))
+
+    def visit_STRING(self, leaf: Leaf) -> ast.AST:
+        return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))
+
 
 def compile(code: str) -> ast.AST:
     return Compiler().visit(parse(code + "\n"))

@@ -13,3 +13,11 @@ def assert_compiles(code: str) -> None:
 
 def test_name() -> None:
     assert_compiles("a")
+
+
+def test_literal() -> None:
+    assert_compiles("1")
+    assert_compiles("1.0")
+    assert_compiles('"hello"')
+    assert_compiles('"""hello"""')
+    assert_compiles('r"hello"')
