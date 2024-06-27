@@ -4,7 +4,17 @@ import ast
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Generator, Generic, List, Sequence, Tuple, TypeVar
+from typing import (
+    Callable,
+    Dict,
+    Generator,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+)
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
@@ -117,6 +127,22 @@ TOKEN_TYPE_TO_UNARY_OP = {
     token.MINUS: ast.USub,
     token.TILDE: ast.Invert,
 }
+
+
+@dataclass
+class _Consumer:
+    children: Sequence[NL]
+    index: int = 0
+
+    def consume(self, typ: Optional[int] = None) -> Optional[NL]:
+        if self.index < len(self.children) and (
+            typ is None or self.children[self.index].type == typ
+        ):
+            node = self.children[self.index]
+            self.index += 1
+            return node
+        else:
+            return None
 
 
 class Compiler(Visitor[ast.AST]):
@@ -414,19 +440,7 @@ class Compiler(Visitor[ast.AST]):
                     )
                 )
             elif argument.children[1].type == token.COLONEQUAL:
-                with self.set_expr_context(ast.Store()):
-                    target = self.visit(argument.children[0])
-                if not isinstance(target, ast.Name):
-                    raise UnsupportedSyntaxError("walrus target must be a name")
-                value = self.visit(argument.children[2])
-                walrus = ast.NamedExpr(
-                    target=target,
-                    value=value,
-                    **unify_line_ranges(
-                        get_line_range(argument.children[0]),
-                        get_line_range(argument.children[2]),
-                    ),
-                )
+                walrus = self._compile_named_expr(argument.children)
                 if len(argument.children) > 3:
                     comps = self._compile_comprehension(node.children[3])
                     args.append(
@@ -485,6 +499,53 @@ class Compiler(Visitor[ast.AST]):
         else:
             return [], self._compile_comprehension(node)
 
+    def _compile_named_expr(self, children: Sequence[NL]) -> ast.NamedExpr:
+        with self.set_expr_context(ast.Store()):
+            target = self.visit(children[0])
+        if not isinstance(target, ast.Name):
+            raise UnsupportedSyntaxError("walrus target must be a name")
+        value = self.visit(children[2])
+        return ast.NamedExpr(
+            target=target,
+            value=value,
+            **unify_line_ranges(
+                get_line_range(children[0]), get_line_range(children[2])
+            ),
+        )
+
+    def visit_subscript(self, node: Node) -> ast.expr:
+        if (
+            len(node.children) == 3
+            and isinstance(node.children[1], Leaf)
+            and node.children[1].value == token.COLONEQUAL
+        ):
+            return self._compile_named_expr(node.children)
+        consumer = _Consumer(node.children)
+        if consumer.consume(token.COLON) is None:
+            lower = self.visit(consumer.consume())
+            assert consumer.consume(token.COLON) is not None
+        else:
+            lower = None
+        if (sliceop := consumer.consume(syms.sliceop)) is not None:
+            step = self.visit(sliceop.children[1])
+            upper = None
+        elif consumer.consume(token.COLON) is None:
+            if (upper_node := consumer.consume()) is None:
+                upper = None
+            else:
+                upper = self.visit(upper_node)
+            if (sliceop := consumer.consume(syms.sliceop)) is not None:
+                step = self.visit(sliceop.children[1])
+            else:
+                step = None
+        else:
+            upper = step = None
+        return ast.Slice(lower=lower, upper=upper, step=step, **get_line_range(node))
+
+    def visit_subscriptlist(self, node: Node) -> ast.Tuple:
+        elts = [self.visit(child) for child in node.children[::2]]
+        return ast.Tuple(elts=elts, ctx=self.expr_context, **get_line_range(node))
+
     # Leaves
     def visit_NAME(self, leaf: Leaf) -> ast.AST:
         return ast.Name(id=leaf.value, ctx=self.expr_context, **get_line_range(leaf))
@@ -494,6 +555,9 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_STRING(self, leaf: Leaf) -> ast.AST:
         return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))
+
+    def visit_COLON(self, leaf: Leaf) -> ast.AST:
+        return ast.Slice(lower=None, upper=None, step=None, **get_line_range(leaf))
 
 
 def compile(code: str) -> ast.AST:

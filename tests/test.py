@@ -106,3 +106,18 @@ def test_boolop() -> None:
     assert_compiles("1 or 2 and 3")
     assert_compiles("1 and 2 and 3 and 4")
     assert_compiles("1 or 2 or 3 or 4")
+
+
+def test_subscript() -> None:
+    assert_compiles("a[1]")
+    assert_compiles("a[1, 2]")
+    assert_compiles("a[1:2]")
+    assert_compiles("a[1:2, 3:4]")
+    assert_compiles("a[1:2:3]")
+    assert_compiles("a[1:2:3, 4:5:6]")
+    assert_compiles("a[1, 2:3]")
+    assert_compiles("a[:]")
+    assert_compiles("a[::]")
+    assert_compiles("a[1:]")
+    assert_compiles("a[:2]")
+    assert_compiles("a[::2]")
