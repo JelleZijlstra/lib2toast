@@ -3,20 +3,19 @@
 import ast
 import sys
 from dataclasses import dataclass, field
-from typing_extensions import TypedDict
 from typing import Callable, Dict, Generic, TypeVar
 
-from blib2to3.pgen2 import token
-from blib2to3.pytree import NL, Leaf, Node, type_repr, _type_reprs
-import sys
-from blib2to3.pgen2.grammar import Grammar
 from blib2to3 import pygram
-from blib2to3.pytree import NL
+from blib2to3.pgen2 import token
+from blib2to3.pgen2.grammar import Grammar
+from blib2to3.pytree import NL, Leaf, Node, type_repr
+from typing_extensions import TypedDict
 
 pygram.initialize(cache_dir=None)
 
 
 T = TypeVar("T")
+
 
 def parse(code: str, grammar: Grammar = pygram.python_grammar_soft_keywords) -> NL:
     """Parse the given code using the given grammar."""
@@ -142,10 +141,10 @@ class Compiler(Visitor[ast.AST]):
             return ast.TypeVarTuple(name=node.children[0].value, **get_line_range(node))
         else:
             raise UnsupportedSyntaxError("TypeVarTuple")
-    
+
     def visit_typeparam(self, node: Node) -> ast.AST:
         return self.visit(node.children[0])
-    
+
     def visit_file_input(self, node: Node) -> ast.AST:
         return ast.Module(
             # skip ENDMARKER
@@ -153,17 +152,17 @@ class Compiler(Visitor[ast.AST]):
             type_ignores=[],  # TODO
             **get_line_range(node),
         )
-    
+
     def visit_simple_stmt(self, node: Node) -> ast.AST:
         val = self.visit(node.children[0])
         if isinstance(val, ast.expr):
             return ast.Expr(val, **get_line_range(node.children[0]))
         else:
             return val
-    
+
     def visit_NAME(self, leaf: Leaf) -> ast.AST:
         return ast.Name(id=leaf.value, ctx=ast.Load(), **get_line_range(leaf))
-    
+
 
 def compile(code: str) -> ast.AST:
     return Compiler().visit(parse(code + "\n"))
