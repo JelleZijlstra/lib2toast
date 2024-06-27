@@ -74,12 +74,39 @@ def get_line_range(node: NL) -> LineRange:
     else:
         begin_range = get_line_range(node.children[0])
         end_range = get_line_range(node.children[-1])
-        return LineRange(
-            lineno=begin_range["lineno"],
-            col_offset=begin_range["col_offset"],
-            end_lineno=end_range["end_lineno"],
-            end_col_offset=end_range["end_col_offset"],
-        )
+        return unify_line_ranges(begin_range, end_range)
+
+
+def unify_line_ranges(begin_range: LineRange, end_range: LineRange) -> LineRange:
+    return LineRange(
+        lineno=begin_range["lineno"],
+        col_offset=begin_range["col_offset"],
+        end_lineno=end_range["end_lineno"],
+        end_col_offset=end_range["end_col_offset"],
+    )
+
+
+TOKEN_TYPE_TO_BINOP = {
+    token.PLUS: ast.Add,
+    token.MINUS: ast.Sub,
+    token.STAR: ast.Mult,
+    token.SLASH: ast.Div,
+    token.AT: ast.MatMult,
+    token.DOUBLESLASH: ast.FloorDiv,
+    token.PERCENT: ast.Mod,
+    token.DOUBLESTAR: ast.Pow,
+    token.LEFTSHIFT: ast.LShift,
+    token.RIGHTSHIFT: ast.RShift,
+    token.AMPER: ast.BitAnd,
+    token.VBAR: ast.BitOr,
+    token.CIRCUMFLEX: ast.BitXor,
+    token.EQEQUAL: ast.Eq,
+    token.NOTEQUAL: ast.NotEq,
+    token.LESS: ast.Lt,
+    token.GREATER: ast.Gt,
+    token.LESSEQUAL: ast.LtE,
+    token.GREATEREQUAL: ast.GtE,
+}
 
 
 class Compiler(Visitor[ast.AST]):
@@ -153,6 +180,7 @@ class Compiler(Visitor[ast.AST]):
             **get_line_range(node),
         )
 
+    # Statements
     def visit_simple_stmt(self, node: Node) -> ast.AST:
         val = self.visit(node.children[0])
         if isinstance(val, ast.expr):
@@ -160,6 +188,26 @@ class Compiler(Visitor[ast.AST]):
         else:
             return val
 
+    # Expressions
+    def visit_expr(self, node: Node) -> ast.AST:
+        op = self.visit(node.children[0])
+        begin_range = get_line_range(node.children[0])
+        for child_index in range(2, len(node.children), 2):
+            child = node.children[child_index]
+            operator = node.children[child_index - 1]
+            op = ast.BinOp(
+                left=op,
+                op=TOKEN_TYPE_TO_BINOP[operator.type](),
+                right=self.visit(child),
+                **unify_line_ranges(begin_range, get_line_range(child)),
+            )
+        return op
+
+    visit_xor_expr = visit_and_expr = visit_shift_expr = visit_arith_expr = (
+        visit_term
+    ) = visit_expr
+
+    # Leaves
     def visit_NAME(self, leaf: Leaf) -> ast.AST:
         return ast.Name(id=leaf.value, ctx=ast.Load(), **get_line_range(leaf))
 
