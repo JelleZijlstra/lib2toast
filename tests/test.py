@@ -37,3 +37,9 @@ def test_arithmetic() -> None:
     assert_compiles("1 % 3")
     assert_compiles("2 * 3 // 4")
     assert_compiles("1 + 2 * 3 // 4 % 5")
+
+
+def test_unary() -> None:
+    assert_compiles("-1")
+    assert_compiles("+1")
+    assert_compiles("~1")

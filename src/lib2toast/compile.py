@@ -107,6 +107,11 @@ TOKEN_TYPE_TO_BINOP = {
     token.LESSEQUAL: ast.LtE,
     token.GREATEREQUAL: ast.GtE,
 }
+TOKEN_TYPE_TO_UNARY_OP = {
+    token.PLUS: ast.UAdd,
+    token.MINUS: ast.USub,
+    token.TILDE: ast.Invert,
+}
 
 
 class Compiler(Visitor[ast.AST]):
@@ -202,6 +207,13 @@ class Compiler(Visitor[ast.AST]):
                 **unify_line_ranges(begin_range, get_line_range(child)),
             )
         return op
+
+    def visit_factor(self, node: Node) -> ast.AST:
+        return ast.UnaryOp(
+            op=TOKEN_TYPE_TO_UNARY_OP[node.children[0].type](),
+            operand=self.visit(node.children[1]),
+            **get_line_range(node),
+        )
 
     visit_xor_expr = visit_and_expr = visit_shift_expr = visit_arith_expr = (
         visit_term
