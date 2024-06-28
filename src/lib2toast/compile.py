@@ -161,6 +161,21 @@ TOKEN_TYPE_TO_UNARY_OP = {
     token.MINUS: ast.USub,
     token.TILDE: ast.Invert,
 }
+TOKEN_TYPE_TO_AUGASSIGN = {
+    token.PLUSEQUAL: ast.Add,
+    token.MINEQUAL: ast.Sub,
+    token.STAREQUAL: ast.Mult,
+    token.SLASHEQUAL: ast.Div,
+    token.ATEQUAL: ast.MatMult,
+    token.DOUBLESLASHEQUAL: ast.FloorDiv,
+    token.PERCENTEQUAL: ast.Mod,
+    token.DOUBLESTAREQUAL: ast.Pow,
+    token.LEFTSHIFTEQUAL: ast.LShift,
+    token.RIGHTSHIFTEQUAL: ast.RShift,
+    token.AMPEREQUAL: ast.BitAnd,
+    token.VBAREQUAL: ast.BitOr,
+    token.CIRCUMFLEXEQUAL: ast.BitXor,
+}
 
 
 @dataclass
@@ -285,6 +300,57 @@ class Compiler(Visitor[ast.AST]):
         else:
             return val
 
+    def visit_expr_stmt(self, node: Node) -> ast.AST:
+        consumer = _Consumer(node.children)
+        lhs_node = consumer.expect()
+        with self.set_expr_context(ast.Store()):
+            lhs = self.visit_typed(lhs_node, ast.expr)
+        if (annassign := consumer.consume(syms.annassign)) is not None:
+            annotation = self.visit_typed(annassign.children[1], ast.expr)
+            if len(annassign.children) == 4:
+                value = self.visit_typed(annassign.children[3], ast.expr)
+            else:
+                value = None
+            simple = 1 if lhs_node.type == token.NAME else 0
+            if not isinstance(lhs, (ast.Name, ast.Attribute, ast.Subscript)):
+                raise UnsupportedSyntaxError("AnnAssign target")
+            return ast.AnnAssign(
+                target=lhs,
+                annotation=annotation,
+                value=value,
+                simple=simple,
+                **get_line_range(node),
+            )
+        elif consumer.consume(token.EQUAL) is not None:
+            exprs = []
+            rhs: Optional[ast.expr] = None
+            while True:
+                child = consumer.expect()
+                if consumer.index < len(node.children):
+                    with self.set_expr_context(ast.Store()):
+                        exprs.append(self.visit_typed(child, ast.expr))
+                else:
+                    rhs = self.visit_typed(child, ast.expr)
+                if consumer.done():
+                    break
+                else:
+                    consumer.expect(token.EQUAL)
+            assert rhs is not None
+            return ast.Assign(targets=[lhs, *exprs], value=rhs, **get_line_range(node))
+        else:
+            # AugAssign
+            operator = consumer.expect()
+            assert isinstance(operator, Leaf)
+            op = TOKEN_TYPE_TO_AUGASSIGN[operator.type]()
+            if not isinstance(lhs, (ast.Name, ast.Attribute, ast.Subscript)):
+                raise UnsupportedSyntaxError("AugAssign target")
+            return ast.AugAssign(
+                target=lhs,
+                op=op,
+                value=self.visit_typed(consumer.expect(), ast.expr),
+                **get_line_range(node),
+            )
+
     # Expressions
     def visit_testlist_gexp(
         self, node: Node, parent_node: Optional[Node] = None
@@ -301,6 +367,8 @@ class Compiler(Visitor[ast.AST]):
         return ast.Tuple(
             elts=elts, ctx=self.expr_context, **get_line_range(parent_node)
         )
+
+    visit_testlist_star_expr = visit_testlist_gexp
 
     def visit_atom(self, node: Node) -> ast.AST:
         if node.children[0].type == token.LPAR:
@@ -721,9 +789,14 @@ class Compiler(Visitor[ast.AST]):
             return self._visit_power_without_await(children)
 
     def _visit_power_without_await(self, children: Sequence[NL]) -> ast.expr:
-        atom = self.visit_typed(children[0], ast.expr)
+        trailers = children[1:]
+        if trailers:
+            with self.set_expr_context(ast.Load()):
+                atom = self.visit_typed(children[0], ast.expr)
+        else:
+            atom = self.visit_typed(children[0], ast.expr)
         begin_range = get_line_range(children[0])
-        for trailer in children[1:]:
+        for trailer in trailers:
             assert isinstance(trailer, Node)
             if trailer.children[0].type == token.LPAR:  # call
                 if len(trailer.children) == 2:
@@ -743,7 +816,8 @@ class Compiler(Visitor[ast.AST]):
                 line_range = unify_line_ranges(
                     begin_range, get_line_range(trailer.children[-1])
                 )
-                subscript = self.visit_typed(trailer.children[1], ast.expr)
+                with self.set_expr_context(ast.Load()):
+                    subscript = self.visit_typed(trailer.children[1], ast.expr)
                 atom = ast.Subscript(
                     value=atom, slice=subscript, ctx=self.expr_context, **line_range
                 )
