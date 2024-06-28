@@ -6,18 +6,7 @@ import sys
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import (
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Callable, Generic, Optional, TypeVar, Union
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
@@ -31,7 +20,7 @@ syms = pygram.python_symbols
 
 T = TypeVar("T")
 
-LVB = Union[Leaf, ast.Constant, Tuple[Leaf, Leaf]]
+LVB = Union[Leaf, ast.Constant, tuple[Leaf, Leaf]]
 
 
 def parse(code: str, grammar: Grammar = pygram.python_grammar_soft_keywords) -> NL:
@@ -46,7 +35,7 @@ class UnsupportedSyntaxError(Exception):
 
 @dataclass
 class Visitor(Generic[T]):
-    token_type_to_name: Dict[int, str] = field(default_factory=lambda: token.tok_name)
+    token_type_to_name: dict[int, str] = field(default_factory=lambda: token.tok_name)
     node_type_to_name: Callable[[int], Union[str, int]] = field(
         default_factory=lambda: type_repr
     )
@@ -202,7 +191,7 @@ class _Consumer:
 class Compiler(Visitor[ast.AST]):
     expr_context: ast.expr_context = ast.Load()
 
-    def visit_typed(self, node: NL, typ: Type[T]) -> T:
+    def visit_typed(self, node: NL, typ: type[T]) -> T:
         result = self.visit(node)
         if not isinstance(result, typ):
             raise TypeError(f"Expected {typ}, got {result}")
@@ -350,7 +339,7 @@ class Compiler(Visitor[ast.AST]):
                 )
             consumer = _Consumer(inner.children)
             is_dict = False
-            keys: List[Optional[ast.expr]] = []
+            keys: list[Optional[ast.expr]] = []
             values = []
             elts = []
             while not consumer.done():
@@ -427,7 +416,7 @@ class Compiler(Visitor[ast.AST]):
         else:
             # concatenated strings
             values = []
-            last_value_bits: List[LVB] = []
+            last_value_bits: list[LVB] = []
             contains_fstring = False
             is_bytestring = False
             for child in node.children:
@@ -463,7 +452,7 @@ class Compiler(Visitor[ast.AST]):
                 ast.JoinedStr(values=values, **get_line_range(node)), node
             )
 
-    def _string_prefix(self, leaf: Leaf) -> Set[str]:
+    def _string_prefix(self, leaf: Leaf) -> set[str]:
         match = re.match(r"^[A-Za-z]*", leaf.value)
         assert match, repr(leaf)
         return set(match.group().lower())
@@ -502,10 +491,10 @@ class Compiler(Visitor[ast.AST]):
     def _compile_fstring_innards(
         self,
         children: Sequence[NL],
-        last_value_bits: List[LVB],
+        last_value_bits: list[LVB],
         start_leaf: Optional[Leaf],
-    ) -> Tuple[List[ast.expr], List[LVB]]:
-        values: List[ast.expr] = []
+    ) -> tuple[list[ast.expr], list[LVB]]:
+        values: list[ast.expr] = []
         for child in children:
             if isinstance(child, Leaf):
                 if child.type == token.FSTRING_START:
@@ -533,7 +522,7 @@ class Compiler(Visitor[ast.AST]):
 
     def compile_fstring_replacement_field(
         self, node: Node, fstring_start: Leaf
-    ) -> Tuple[Optional[ast.Constant], ast.FormattedValue]:
+    ) -> tuple[Optional[ast.Constant], ast.FormattedValue]:
         consumer = _Consumer(node.children)
         consumer.expect(token.LBRACE)
         expr_node = consumer.expect()
@@ -759,13 +748,10 @@ class Compiler(Visitor[ast.AST]):
                 line_range = unify_line_ranges(
                     begin_range, get_line_range(trailer.children[-1])
                 )
-                if sys.version_info >= (3, 9):
-                    subscript = self.visit_typed(trailer.children[1], ast.expr)
-                    atom = ast.Subscript(
-                        value=atom, slice=subscript, ctx=self.expr_context, **line_range
-                    )
-                else:
-                    raise NotImplementedError("Subscript")
+                subscript = self.visit_typed(trailer.children[1], ast.expr)
+                atom = ast.Subscript(
+                    value=atom, slice=subscript, ctx=self.expr_context, **line_range
+                )
             elif trailer.children[0].type == token.DOT:  # attribute
                 assert (
                     isinstance(trailer.children[1], Leaf)
@@ -785,7 +771,7 @@ class Compiler(Visitor[ast.AST]):
 
     def _compile_arglist(
         self, node: NL, parent_node: Node
-    ) -> Tuple[List[ast.expr], List[ast.keyword]]:
+    ) -> tuple[list[ast.expr], list[ast.keyword]]:
         if not isinstance(node, Node) or node.type != syms.arglist:
             arguments = [node]
         else:
@@ -851,7 +837,7 @@ class Compiler(Visitor[ast.AST]):
                 raise NotImplementedError(repr(argument))
         return args, keywords
 
-    def _compile_comprehension(self, node: NL) -> List[ast.comprehension]:
+    def _compile_comprehension(self, node: NL) -> list[ast.comprehension]:
         assert node.type in (syms.old_comp_for, syms.comp_for), repr(node)
         if node.children[0].type == token.ASYNC:
             is_async = 1
@@ -877,7 +863,7 @@ class Compiler(Visitor[ast.AST]):
 
     def _compile_comp_iter(
         self, node: Node
-    ) -> Tuple[List[ast.expr], List[ast.comprehension]]:
+    ) -> tuple[list[ast.expr], list[ast.comprehension]]:
         assert (
             isinstance(node.children[0], Leaf) and node.children[0].type == token.NAME
         )
@@ -970,13 +956,13 @@ class Compiler(Visitor[ast.AST]):
         return ast.Lambda(args=args, body=body, **get_line_range(node))
 
     def visit_varargslist(self, node: Node) -> ast.arguments:
-        posonlyargs: List[ast.arg] = []
-        args: List[ast.arg] = []
+        posonlyargs: list[ast.arg] = []
+        args: list[ast.arg] = []
         vararg = None
-        kwonlyargs: List[ast.arg] = []
-        kw_defaults: List[Optional[ast.expr]] = []
+        kwonlyargs: list[ast.arg] = []
+        kw_defaults: list[Optional[ast.expr]] = []
         kwarg = None
-        defaults: List[ast.expr] = []
+        defaults: list[ast.expr] = []
         current_args = args
 
         consumer = _Consumer(node.children)
