@@ -14,6 +14,7 @@ from typing import (
     Sequence,
     Tuple,
     TypeVar,
+    Union,
 )
 
 from blib2to3 import pygram
@@ -27,6 +28,8 @@ pygram.initialize(cache_dir=None)
 syms = pygram.python_symbols
 
 T = TypeVar("T")
+
+LVB = Union[Leaf, ast.Constant]
 
 
 def parse(code: str, grammar: Grammar = pygram.python_grammar_soft_keywords) -> NL:
@@ -89,6 +92,20 @@ def get_line_range(node: NL) -> LineRange:
         return unify_line_ranges(begin_range, end_range)
 
 
+def get_line_range_for_leaf_or_ast(node: Union[Leaf, ast.Constant]) -> LineRange:
+    if isinstance(node, Leaf):
+        return get_line_range_for_leaf(node)
+    else:
+        assert node.end_lineno is not None
+        assert node.end_col_offset is not None
+        return LineRange(
+            lineno=node.lineno,
+            col_offset=node.col_offset,
+            end_lineno=node.end_lineno,
+            end_col_offset=node.end_col_offset,
+        )
+
+
 def unify_line_ranges(begin_range: LineRange, end_range: LineRange) -> LineRange:
     return LineRange(
         lineno=begin_range["lineno"],
@@ -143,6 +160,12 @@ class _Consumer:
             return node
         else:
             return None
+
+    def expect(self, typ: Optional[int] = None) -> NL:
+        node = self.consume(typ)
+        if node is None:
+            raise RuntimeError(f"Expected {typ}")
+        return node
 
     def done(self) -> bool:
         return self.index >= len(self.children)
@@ -370,8 +393,132 @@ class Compiler(Visitor[ast.AST]):
                 **get_line_range(node),
             )
         else:
-            # concatenated strings, I think
-            raise NotImplementedError(repr(node))
+            # concatenated strings
+            values = []
+            last_value_bits: List[LVB] = []
+            contains_fstring = False
+            for child in node.children:
+                if isinstance(child, Leaf) and child.type == token.STRING:
+                    last_value_bits.append(child)
+                elif isinstance(child, Node) and child.type == syms.fstring:
+                    contains_fstring = True
+                    new_values, last_value_bits = self._compile_fstring_innards(
+                        child.children, last_value_bits
+                    )
+                    values += new_values
+            if last_value_bits:
+                values.append(self._concatenate_joined_strings(last_value_bits))
+            if not contains_fstring and len(values) == 1:
+                return values[0]
+            return ast.JoinedStr(values=values, **get_line_range(node))
+
+    def visit_fstring(self, node: Node) -> ast.JoinedStr:
+        values, last_value_bits = self._compile_fstring_innards(node.children, [])
+        if last_value_bits:
+            values.append(self._concatenate_joined_strings(last_value_bits))
+        return ast.JoinedStr(values=values, **get_line_range(node))
+
+    def _compile_fstring_innards(
+        self, children: Sequence[NL], last_value_bits: List[LVB]
+    ) -> Tuple[List[ast.expr], List[LVB]]:
+        values: List[ast.expr] = []
+        for child in children:
+            if isinstance(child, Leaf):
+                if child.type in (token.FSTRING_START, token.FSTRING_END):
+                    continue
+                assert child.type == token.FSTRING_MIDDLE, repr(child)
+                if child.value:
+                    last_value_bits.append(child)
+            else:
+                self_doc, formatted_value = self.compile_fstring_replacement_field(
+                    child
+                )
+                if self_doc is not None:
+                    last_value_bits.append(self_doc)
+                if last_value_bits:
+                    values.append(self._concatenate_joined_strings(last_value_bits))
+                    last_value_bits = []
+                values.append(formatted_value)
+        return values, last_value_bits
+
+    def compile_fstring_replacement_field(
+        self, node: Node
+    ) -> Tuple[Optional[ast.Constant], ast.FormattedValue]:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.LBRACE)
+        expr_node = consumer.expect()
+        expr = self.visit(expr_node)
+        self_doc = format_spec = None
+        conversion = -1
+        if (eq := consumer.consume(token.EQUAL)) is not None:
+            text = str(expr_node) + str(eq)
+            begin_line_range = get_line_range(expr_node)
+            end_line_range = get_line_range(eq)
+            line_range = unify_line_ranges(begin_line_range, end_line_range)
+            next_node = node.children[consumer.index]
+            if next_node.prefix:
+                text += next_node.prefix
+                line_range["end_lineno"] += next_node.prefix.count("\n")
+                if "\n" in next_node.prefix:
+                    line_range["end_col_offset"] = (
+                        len(next_node.prefix) - next_node.prefix.rfind("\n") - 1
+                    )
+                else:
+                    line_range["end_col_offset"] += len(next_node.prefix)
+            self_doc = ast.Constant(value=text, **line_range)
+        if consumer.consume(token.BANG) is not None:
+            conversion_string = consumer.expect(token.NAME).value
+            if conversion_string in ("s", "r", "a"):
+                conversion = ord(conversion_string)
+            else:
+                raise RuntimeError(f"Unexpected conversion: {conversion_string!r}")
+        if (colon := consumer.consume(token.COLON)) is not None:
+            values, last_value_bits = self._compile_fstring_innards(
+                node.children[consumer.index : -1], []
+            )
+            if last_value_bits:
+                values.append(self._concatenate_joined_strings(last_value_bits))
+            elif values:
+                # there's always an empty Constant for some reason
+                prev_line_range = get_line_range(node.children[-2])
+                next_line_range = get_line_range(node.children[-1])
+                line_range = {
+                    "lineno": prev_line_range["end_lineno"],
+                    "col_offset": prev_line_range["end_col_offset"],
+                    "end_lineno": next_line_range["lineno"],
+                    "end_col_offset": next_line_range["col_offset"],
+                }
+                values.append(ast.Constant(value="", **line_range))
+            line_range = unify_line_ranges(
+                get_line_range(colon), get_line_range(node.children[-2])
+            )
+            format_spec = ast.JoinedStr(values=values, **line_range)
+        if conversion == -1 and format_spec is None and self_doc is not None:
+            conversion = ord("r")
+
+        return self_doc, ast.FormattedValue(
+            value=expr,
+            conversion=conversion,
+            format_spec=format_spec,
+            **get_line_range(node),
+        )
+
+    def _concatenate_joined_strings(self, nodes: Sequence[LVB]) -> ast.Constant:
+        strings = []
+        for node in nodes:
+            if isinstance(node, ast.Constant):
+                strings.append(node.value)
+            elif node.type == token.STRING:
+                strings.append(ast.literal_eval(node.value))
+            elif node.type == token.FSTRING_MIDDLE:
+                strings.append(node.value)
+            else:
+                raise RuntimeError(f"Unexpected node: {node!r}")
+        line_range = unify_line_ranges(
+            get_line_range_for_leaf_or_ast(nodes[0]),
+            get_line_range_for_leaf_or_ast(nodes[-1]),
+        )
+        return ast.Constant(value="".join(strings), **line_range)
 
     def visit_expr(self, node: Node) -> ast.AST:
         op = self.visit(node.children[0])
