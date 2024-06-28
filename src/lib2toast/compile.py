@@ -3,16 +3,15 @@
 import ast
 import re
 import sys
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import (
     Callable,
     Dict,
-    Generator,
     Generic,
     List,
     Optional,
-    Sequence,
     Set,
     Tuple,
     Type,
@@ -453,20 +452,52 @@ class Compiler(Visitor[ast.AST]):
                         bits.append(ast.literal_eval(leaf.value))
                     return ast.Constant(value=b"".join(bits), **get_line_range(node))
                 values.append(self._concatenate_joined_strings(last_value_bits))
-            if not contains_fstring and len(values) == 1:
-                return values[0]
-            return ast.JoinedStr(values=values, **get_line_range(node))
+            if len(values) == 1:
+                if not contains_fstring:
+                    return values[0]
+                elif sys.version_info < (3, 12) and isinstance(values[0], ast.Constant):
+                    values[:] = [
+                        ast.Constant(value=values[0].value, **get_line_range(node))
+                    ]
+            return self._derange(
+                ast.JoinedStr(values=values, **get_line_range(node)), node
+            )
 
     def _string_prefix(self, leaf: Leaf) -> Set[str]:
         match = re.match(r"^[A-Za-z]*", leaf.value)
         assert match, repr(leaf)
         return set(match.group().lower())
 
-    def visit_fstring(self, node: Node) -> ast.JoinedStr:
+    def visit_fstring(self, node: Node) -> ast.expr:
         values, last_value_bits = self._compile_fstring_innards(node.children, [], None)
         if last_value_bits:
             values.append(self._concatenate_joined_strings(last_value_bits))
-        return ast.JoinedStr(values=values, **get_line_range(node))
+        joined = ast.JoinedStr(values=values, **get_line_range(node))
+        return self._derange(joined, node)
+
+    def _derange(self, value: ast.expr, node: Node) -> ast.expr:
+        if sys.version_info >= (3, 12):
+            return value
+        if isinstance(value, ast.Constant):
+            return ast.Constant(value=value.value, **get_line_range(node))
+        elif isinstance(value, ast.FormattedValue):
+            if isinstance(value.format_spec, ast.JoinedStr):
+                format_spec = self._derange(value.format_spec, node)
+            else:
+                format_spec = value.format_spec
+            return ast.FormattedValue(
+                value=value.value,
+                conversion=value.conversion,
+                format_spec=format_spec,
+                **get_line_range(node),
+            )
+        elif isinstance(value, ast.JoinedStr):
+            return ast.JoinedStr(
+                values=[self._derange(val, node) for val in value.values],
+                **get_line_range(node),
+            )
+        else:
+            return value
 
     def _compile_fstring_innards(
         self,
@@ -539,7 +570,7 @@ class Compiler(Visitor[ast.AST]):
             )
             if last_value_bits:
                 values.append(self._concatenate_joined_strings(last_value_bits))
-            elif values:
+            elif values and sys.version_info >= (3, 12):
                 # there's always an empty Constant for some reason
                 prev_line_range = get_line_range(node.children[-2])
                 next_line_range = get_line_range(node.children[-1])

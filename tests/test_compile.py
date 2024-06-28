@@ -6,8 +6,8 @@ from lib2toast.compile import compile
 def assert_compiles(code: str) -> None:
     our_code = compile(code)
     ast_code = ast.parse(code)
-    assert ast.dump(our_code, include_attributes=True) == ast.dump(
-        ast_code, include_attributes=True
+    assert ast.dump(our_code, include_attributes=True, indent=2) == ast.dump(
+        ast_code, include_attributes=True, indent=2
     )
 
 
@@ -151,8 +151,10 @@ def test_atom() -> None:
 
 def test_fstring() -> None:
     assert_compiles('f""')
+    assert_compiles('f"a"')
     assert_compiles('f"hello"')
     assert_compiles('f"{a}"')
+    assert_compiles('f"{a}{b}"')
     assert_compiles('"a" "b"')
     assert_compiles('f"a" "b"')
     assert_compiles('f"{a!s}"')
