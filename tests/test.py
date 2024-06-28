@@ -172,3 +172,15 @@ def test_fstring() -> None:
     assert_compiles('f"{a = !s}"')
     assert_compiles('f"{a = !r}"')
     assert_compiles('f"{a = :b!s}"')
+    assert_compiles('f"{{"')
+
+
+def test_byte_string() -> None:
+    assert_compiles("b''")
+    assert_compiles("b'hello'")
+    assert_compiles("b'hello' b'world'")
+    assert_compiles("B'hello'")
+    assert_compiles("B'hello' b'world'")
+    assert_compiles(r"b'\x33'")
+    assert_compiles(r"rb'\x33'")
+    assert_compiles(r"b'\x33' b'\x44'")

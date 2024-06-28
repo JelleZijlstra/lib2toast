@@ -1,6 +1,7 @@
 """Compile a CST to an AST."""
 
 import ast
+import re
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Set,
     Tuple,
     TypeVar,
     Union,
@@ -397,20 +399,38 @@ class Compiler(Visitor[ast.AST]):
             values = []
             last_value_bits: List[LVB] = []
             contains_fstring = False
+            is_bytestring = False
             for child in node.children:
                 if isinstance(child, Leaf) and child.type == token.STRING:
+                    if "b" in self._string_prefix(child):
+                        is_bytestring = True
                     last_value_bits.append(child)
                 elif isinstance(child, Node) and child.type == syms.fstring:
+                    if is_bytestring:
+                        raise UnsupportedSyntaxError("f-string in bytestring")
                     contains_fstring = True
                     new_values, last_value_bits = self._compile_fstring_innards(
                         child.children, last_value_bits
                     )
                     values += new_values
             if last_value_bits:
+                if is_bytestring:
+                    assert not values
+                    return ast.Constant(
+                        value=b"".join(
+                            ast.literal_eval(leaf.value) for leaf in last_value_bits
+                        ),
+                        **get_line_range(node),
+                    )
                 values.append(self._concatenate_joined_strings(last_value_bits))
             if not contains_fstring and len(values) == 1:
                 return values[0]
             return ast.JoinedStr(values=values, **get_line_range(node))
+
+    def _string_prefix(self, leaf: Leaf) -> Set[str]:
+        match = re.match(r"^[A-Za-z]*", leaf.value)
+        assert match, repr(leaf)
+        return set(match.group().lower())
 
     def visit_fstring(self, node: Node) -> ast.JoinedStr:
         values, last_value_bits = self._compile_fstring_innards(node.children, [])
