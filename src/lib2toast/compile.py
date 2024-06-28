@@ -7,7 +7,7 @@ from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from token import ASYNC
-from typing import Callable, Generic, Optional, TypeVar, Union
+from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
@@ -123,6 +123,26 @@ def literal_eval(s: str) -> object:
         return "".join(ast.literal_eval(value) for value in tree.body.values)
     else:
         return ast.literal_eval(tree)
+
+
+_ASTT = TypeVar("_ASTT", bound=ast.AST)
+
+
+def replace(node: _ASTT, **kwargs: Any) -> _ASTT:
+    """Like copy.replace() but for AST nodes."""
+    fields = dict(ast.iter_fields(node))
+    attributes = {attr: getattr(node, attr) for attr in node._attributes}
+    new_kwargs = {**fields, **attributes, **kwargs}
+    return type(node)(**new_kwargs)
+
+
+def change_type(
+    node: ast.AST, new_type: Callable[..., _ASTT], /, **kwargs: Any
+) -> _ASTT:
+    fields = dict(ast.iter_fields(node))
+    attributes = {attr: getattr(node, attr) for attr in node._attributes}
+    new_kwargs = {**fields, **attributes, **kwargs}
+    return new_type(**new_kwargs)
 
 
 def empty_arguments() -> ast.arguments:
@@ -508,6 +528,84 @@ class Compiler(Visitor[ast.AST]):
                 node, ignore_last_leaf=True
             )
 
+    def visit_funcdef(self, node: Node) -> ast.FunctionDef:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)
+        name_node = consumer.expect()
+        assert isinstance(name_node, Leaf) and name_node.type == token.NAME
+        name = name_node.value
+        if (type_params_node := consumer.consume(syms.typeparams)) is not None:
+            type_params = self.compile_typeparams(type_params_node)
+        else:
+            type_params = []
+        args = self.visit_typed(consumer.expect(), ast.arguments)
+        if consumer.consume(token.RARROW) is not None:
+            returns = self.visit_typed(consumer.expect(), ast.expr)
+        else:
+            returns = None
+        consumer.expect(token.COLON)
+        suite, end_line_range = self.compile_suite(consumer.expect())
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        if sys.version_info >= (3, 12):
+            return ast.FunctionDef(
+                name=name,
+                args=args,
+                body=suite,
+                decorator_list=[],
+                returns=returns,
+                type_params=type_params,
+                **line_range,
+            )
+        else:
+            return ast.FunctionDef(
+                decorator_list=[],
+                name=name,
+                args=args,
+                body=suite,
+                returns=returns,
+                **line_range,
+            )
+
+    def visit_classdef(self, node: Node) -> ast.ClassDef:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)  # class
+        name_node = consumer.expect()
+        assert isinstance(name_node, Leaf) and name_node.type == token.NAME
+        name = name_node.value
+        if (type_params_node := consumer.consume(syms.typeparams)) is not None:
+            type_params = self.compile_typeparams(type_params_node)
+        else:
+            type_params = []
+        bases: list[ast.expr] = []
+        keywords: list[ast.keyword] = []
+        if consumer.consume(token.LPAR) is not None:
+            next_node = consumer.expect()
+            if next_node.type != token.RPAR:
+                bases, keywords = self._compile_arglist(next_node, next_node)
+                consumer.expect(token.RPAR)
+        consumer.expect(token.COLON)
+        suite, end_line_range = self.compile_suite(consumer.expect())
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        if sys.version_info >= (3, 12):
+            return ast.ClassDef(
+                name=name,
+                bases=bases,
+                keywords=keywords,
+                body=suite,
+                decorator_list=[],
+                type_params=type_params,
+                **line_range,
+            )
+        else:
+            return ast.ClassDef(
+                name=name,
+                bases=bases,
+                keywords=keywords,
+                body=suite,
+                decorator_list=[],
+                **line_range,
+            )
+
     def visit_if_stmt(self, node: Node) -> ast.If:
         consumer = _Consumer(node.children)
         consumer.expect(token.NAME)
@@ -610,36 +708,25 @@ class Compiler(Visitor[ast.AST]):
         begin_line_range = get_line_range(async_node)
         child = self.visit(node.children[1])
         if isinstance(child, ast.With):
-            return ast.AsyncWith(
-                items=child.items,
-                body=child.body,
+            return change_type(
+                child,
+                ast.AsyncWith,
                 lineno=begin_line_range["lineno"],
                 col_offset=begin_line_range["col_offset"],
-                end_lineno=child.end_lineno,
-                end_col_offset=child.end_col_offset,
             )
         elif isinstance(child, ast.For):
-            return ast.AsyncFor(
-                target=child.target,
-                iter=child.iter,
-                body=child.body,
-                orelse=child.orelse,
+            return change_type(
+                child,
+                ast.AsyncFor,
                 lineno=begin_line_range["lineno"],
                 col_offset=begin_line_range["col_offset"],
-                end_lineno=child.end_lineno,
-                end_col_offset=child.end_col_offset,
             )
         elif isinstance(child, ast.FunctionDef):
-            return ast.AsyncFunctionDef(
-                name=child.name,
-                args=child.args,
-                body=child.body,
-                decorator_list=child.decorator_list,
-                returns=child.returns,
+            return change_type(
+                child,
+                ast.AsyncFunctionDef,
                 lineno=begin_line_range["lineno"],
                 col_offset=begin_line_range["col_offset"],
-                end_lineno=child.end_lineno,
-                end_col_offset=child.end_col_offset,
             )
         else:
             raise UnsupportedSyntaxError("async")
@@ -1221,7 +1308,7 @@ class Compiler(Visitor[ast.AST]):
         return atom
 
     def _compile_arglist(
-        self, node: NL, parent_node: Node
+        self, node: NL, parent_node: NL
     ) -> tuple[list[ast.expr], list[ast.keyword]]:
         if not isinstance(node, Node) or node.type != syms.arglist:
             arguments = [node]
@@ -1382,19 +1469,27 @@ class Compiler(Visitor[ast.AST]):
         maybe_args = node.children[1]
         if maybe_args.type == token.COLON:
             args = empty_arguments()
-        elif isinstance(maybe_args, Node) and maybe_args.type == syms.varargslist:
-            args = self.visit_varargslist(maybe_args)
         else:
-            assert isinstance(maybe_args, Leaf) and maybe_args.type == token.NAME
+            args = self.compile_args(maybe_args)
+        body = self.visit_typed(node.children[-1], ast.expr)
+        return ast.Lambda(args=args, body=body, **get_line_range(node))
+
+    def visit_parameters(self, node: Node) -> ast.arguments:
+        if len(node.children) == 2:
+            return empty_arguments()
+        return self.compile_args(node.children[1])
+
+    def compile_args(self, node: NL) -> ast.arguments:
+        if isinstance(node, Leaf) and node.type == token.NAME:
             # single argument
-            args = ast.arguments(
+            return ast.arguments(
                 posonlyargs=[],
                 args=[
                     ast.arg(
-                        arg=maybe_args.value,
+                        arg=node.value,
                         annotation=None,
                         type_comment=None,
-                        **get_line_range(maybe_args),
+                        **get_line_range(node),
                     )
                 ],
                 vararg=None,
@@ -1403,10 +1498,6 @@ class Compiler(Visitor[ast.AST]):
                 kwarg=None,
                 defaults=[],
             )
-        body = self.visit_typed(node.children[-1], ast.expr)
-        return ast.Lambda(args=args, body=body, **get_line_range(node))
-
-    def visit_varargslist(self, node: Node) -> ast.arguments:
         posonlyargs: list[ast.arg] = []
         args: list[ast.arg] = []
         vararg = None

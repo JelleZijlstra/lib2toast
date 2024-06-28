@@ -476,3 +476,35 @@ if sys.version_info >= (3, 11):
                 pass
             """
         )
+
+
+def test_function_def() -> None:
+    assert_compiles("def f(): pass")
+    assert_compiles("def f(a): pass")
+    assert_compiles("def f(a, b): pass")
+    assert_compiles("def f(a=1): pass")
+    assert_compiles("def f() -> int: pass")
+
+    assert_compiles("async def f(): pass")
+    assert_compiles("async def f(a): pass")
+    assert_compiles("async def f() -> str: pass")
+
+    if sys.version_info >= (3, 12):
+        assert_compiles("def f[T](): pass")
+        assert_compiles("def f[T, U](): pass")
+        assert_compiles("async def f[T: int](): pass")
+
+
+def test_class_def() -> None:
+    assert_compiles("class A: pass")
+    assert_compiles("class A(): pass")
+    assert_compiles("class A(B): pass")
+    assert_compiles("class A(B, C): pass")
+    assert_compiles("class A(*args): pass")
+    assert_compiles("class A(B, C, x=3): pass")
+    assert_compiles("class A(B, C, x=3, **kwargs): pass")
+
+    if sys.version_info >= (3, 12):
+        assert_compiles("class A[T]: pass")
+        assert_compiles("class A[T, U]: pass")
+        assert_compiles("class A[T: int]: pass")
