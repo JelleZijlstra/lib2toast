@@ -31,7 +31,7 @@ syms = pygram.python_symbols
 
 T = TypeVar("T")
 
-LVB = Union[Leaf, ast.Constant]
+LVB = Union[Leaf, ast.Constant, Tuple[Leaf, Leaf]]
 
 
 def parse(code: str, grammar: Grammar = pygram.python_grammar_soft_keywords) -> NL:
@@ -94,9 +94,11 @@ def get_line_range(node: NL) -> LineRange:
         return unify_line_ranges(begin_range, end_range)
 
 
-def get_line_range_for_leaf_or_ast(node: Union[Leaf, ast.Constant]) -> LineRange:
+def _get_line_range_for_lvb(node: Union[Leaf, ast.Constant]) -> LineRange:
     if isinstance(node, Leaf):
         return get_line_range_for_leaf(node)
+    elif isinstance(node, tuple):
+        return _get_line_range_for_lvb(node[1])
     else:
         assert node.end_lineno is not None
         assert node.end_col_offset is not None
@@ -115,6 +117,16 @@ def unify_line_ranges(begin_range: LineRange, end_range: LineRange) -> LineRange
         end_lineno=end_range["end_lineno"],
         end_col_offset=end_range["end_col_offset"],
     )
+
+
+def literal_eval(s: str) -> object:
+    """Like ast.literal_eval but supports f-strings without placeholders."""
+    tree = ast.parse(s, mode="eval")
+    assert isinstance(tree, ast.Expression)
+    if isinstance(tree.body, ast.JoinedStr):
+        return "".join(ast.literal_eval(value) for value in tree.body.values)
+    else:
+        return ast.literal_eval(tree)
 
 
 TOKEN_TYPE_TO_BINOP = {
@@ -410,18 +422,17 @@ class Compiler(Visitor[ast.AST]):
                         raise UnsupportedSyntaxError("f-string in bytestring")
                     contains_fstring = True
                     new_values, last_value_bits = self._compile_fstring_innards(
-                        child.children, last_value_bits
+                        child.children, last_value_bits, None
                     )
                     values += new_values
             if last_value_bits:
                 if is_bytestring:
                     assert not values
-                    return ast.Constant(
-                        value=b"".join(
-                            ast.literal_eval(leaf.value) for leaf in last_value_bits
-                        ),
-                        **get_line_range(node),
-                    )
+                    bits = []
+                    for leaf in last_value_bits:
+                        assert isinstance(leaf, Leaf)
+                        bits.append(ast.literal_eval(leaf.value))
+                    return ast.Constant(value=b"".join(bits), **get_line_range(node))
                 values.append(self._concatenate_joined_strings(last_value_bits))
             if not contains_fstring and len(values) == 1:
                 return values[0]
@@ -433,25 +444,33 @@ class Compiler(Visitor[ast.AST]):
         return set(match.group().lower())
 
     def visit_fstring(self, node: Node) -> ast.JoinedStr:
-        values, last_value_bits = self._compile_fstring_innards(node.children, [])
+        values, last_value_bits = self._compile_fstring_innards(node.children, [], None)
         if last_value_bits:
             values.append(self._concatenate_joined_strings(last_value_bits))
         return ast.JoinedStr(values=values, **get_line_range(node))
 
     def _compile_fstring_innards(
-        self, children: Sequence[NL], last_value_bits: List[LVB]
+        self,
+        children: Sequence[NL],
+        last_value_bits: List[LVB],
+        start_leaf: Optional[Leaf],
     ) -> Tuple[List[ast.expr], List[LVB]]:
         values: List[ast.expr] = []
         for child in children:
             if isinstance(child, Leaf):
-                if child.type in (token.FSTRING_START, token.FSTRING_END):
+                if child.type == token.FSTRING_START:
+                    assert start_leaf is None
+                    start_leaf = child
+                    continue
+                elif child.type == token.FSTRING_END:
                     continue
                 assert child.type == token.FSTRING_MIDDLE, repr(child)
                 if child.value:
-                    last_value_bits.append(child)
+                    last_value_bits.append((start_leaf, child))
             else:
+                assert start_leaf is not None, children
                 self_doc, formatted_value = self.compile_fstring_replacement_field(
-                    child
+                    child, start_leaf
                 )
                 if self_doc is not None:
                     last_value_bits.append(self_doc)
@@ -462,7 +481,7 @@ class Compiler(Visitor[ast.AST]):
         return values, last_value_bits
 
     def compile_fstring_replacement_field(
-        self, node: Node
+        self, node: Node, fstring_start: Leaf
     ) -> Tuple[Optional[ast.Constant], ast.FormattedValue]:
         consumer = _Consumer(node.children)
         consumer.expect(token.LBRACE)
@@ -494,7 +513,7 @@ class Compiler(Visitor[ast.AST]):
                 raise RuntimeError(f"Unexpected conversion: {conversion_string!r}")
         if (colon := consumer.consume(token.COLON)) is not None:
             values, last_value_bits = self._compile_fstring_innards(
-                node.children[consumer.index : -1], []
+                node.children[consumer.index : -1], [], fstring_start
             )
             if last_value_bits:
                 values.append(self._concatenate_joined_strings(last_value_bits))
@@ -528,15 +547,17 @@ class Compiler(Visitor[ast.AST]):
         for node in nodes:
             if isinstance(node, ast.Constant):
                 strings.append(node.value)
+            elif isinstance(node, tuple):
+                fstring_start, fstring_middle = node
+                end = fstring_start.value.lstrip("rRfF")
+                string = f"{fstring_start}{fstring_middle}{end}"
+                strings.append(literal_eval(string))
             elif node.type == token.STRING:
                 strings.append(ast.literal_eval(node.value))
-            elif node.type == token.FSTRING_MIDDLE:
-                strings.append(node.value)
             else:
                 raise RuntimeError(f"Unexpected node: {node!r}")
         line_range = unify_line_ranges(
-            get_line_range_for_leaf_or_ast(nodes[0]),
-            get_line_range_for_leaf_or_ast(nodes[-1]),
+            _get_line_range_for_lvb(nodes[0]), _get_line_range_for_lvb(nodes[-1])
         )
         return ast.Constant(value="".join(strings), **line_range)
 

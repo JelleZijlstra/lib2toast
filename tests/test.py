@@ -173,6 +173,8 @@ def test_fstring() -> None:
     assert_compiles('f"{a = !r}"')
     assert_compiles('f"{a = :b!s}"')
     assert_compiles('f"{{"')
+    assert_compiles('f"}}"')
+    assert_compiles(r'rf"\{{"')
 
 
 def test_byte_string() -> None:
