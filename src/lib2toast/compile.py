@@ -1343,7 +1343,7 @@ class Compiler(Visitor[ast.AST]):
         args: list[ast.expr] = []
         keywords: list[ast.keyword] = []
         for argument in arguments:
-            if isinstance(argument, Leaf):
+            if isinstance(argument, Leaf) or argument.type != syms.argument:
                 arg = self.visit(argument)
                 assert isinstance(arg, ast.expr)
                 args.append(arg)

@@ -85,6 +85,7 @@ def test_call() -> None:
     assert_compiles("f(a for b in c if d for e in f if g)")
     assert_compiles("f(a async for b in c)")
     assert_compiles("f(a async for b in c for d in e)")
+    assert_compiles("f(a[b])")
 
 
 def test_compare() -> None:
