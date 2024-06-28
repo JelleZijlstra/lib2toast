@@ -129,6 +129,18 @@ def literal_eval(s: str) -> object:
         return ast.literal_eval(tree)
 
 
+def empty_arguments() -> ast.arguments:
+    return ast.arguments(
+        posonlyargs=[],
+        args=[],
+        vararg=None,
+        kwonlyargs=[],
+        kw_defaults=[],
+        kwarg=None,
+        defaults=[],
+    )
+
+
 TOKEN_TYPE_TO_BINOP = {
     token.PLUS: ast.Add,
     token.MINUS: ast.Sub,
@@ -869,6 +881,110 @@ class Compiler(Visitor[ast.AST]):
     def visit_subscriptlist(self, node: Node) -> ast.Tuple:
         elts = [self.visit(child) for child in node.children[::2]]
         return ast.Tuple(elts=elts, ctx=self.expr_context, **get_line_range(node))
+
+    def visit_lambdef(self, node: Node) -> ast.Lambda:
+        maybe_args = node.children[1]
+        if maybe_args.type == token.COLON:
+            args = empty_arguments()
+        elif isinstance(maybe_args, Node) and maybe_args.type == syms.varargslist:
+            args = self.visit_varargslist(maybe_args)
+        else:
+            assert maybe_args.type == token.NAME
+            # single argument
+            args = ast.arguments(
+                posonlyargs=[],
+                args=[
+                    ast.arg(
+                        arg=maybe_args.value,
+                        annotation=None,
+                        type_comment=None,
+                        **get_line_range(maybe_args),
+                    )
+                ],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            )
+        body = self.visit(node.children[-1])
+        return ast.Lambda(args=args, body=body, **get_line_range(node))
+
+    def visit_varargslist(self, node: Node) -> ast.arguments:
+        posonlyargs: List[ast.arg] = []
+        args: List[ast.arg] = []
+        vararg = None
+        kwonlyargs: List[ast.arg] = []
+        kw_defaults: List[Optional[ast.expr]] = []
+        kwarg = None
+        defaults: List[ast.expr] = []
+        current_args = args
+
+        consumer = _Consumer(node.children)
+        while True:
+            tok = consumer.consume()
+            if tok is None:
+                break
+            if tok.type == token.NAME:
+                current_args.append(
+                    ast.arg(
+                        arg=tok.value,
+                        annotation=None,
+                        type_comment=None,
+                        **get_line_range(tok),
+                    )
+                )
+                if consumer.consume(token.EQUAL) is not None:
+                    default = self.visit(consumer.expect())
+                    if current_args is kwonlyargs:
+                        kw_defaults.append(default)
+                    else:
+                        defaults.append(default)
+                elif current_args is kwonlyargs:
+                    kw_defaults.append(None)
+            elif tok.type == token.SLASH:
+                posonlyargs = current_args
+                current_args = args = []
+            elif tok.type == token.DOUBLESTAR:
+                if kwarg is not None:
+                    raise UnsupportedSyntaxError("Multiple **kwargs")
+                name = consumer.expect(token.NAME)
+                kwarg = ast.arg(
+                    arg=name.value,
+                    annotation=None,
+                    type_comment=None,
+                    **get_line_range(name),
+                )
+            elif tok.type == token.STAR:
+                if node.children[consumer.index].type == token.COMMA:
+                    # kw-only marker
+                    pass
+                else:
+                    # *args
+                    if vararg is not None:
+                        raise UnsupportedSyntaxError("Multiple *args")
+                    name = consumer.expect(token.NAME)
+                    vararg = ast.arg(
+                        arg=name.value,
+                        annotation=None,
+                        type_comment=None,
+                        **get_line_range(name),
+                    )
+                current_args = kwonlyargs
+            else:
+                raise UnsupportedSyntaxError(f"Unexpected token: {tok!r}")
+            comma = consumer.consume(token.COMMA)
+            if comma is None:
+                assert consumer.done()
+        return ast.arguments(
+            posonlyargs=posonlyargs,
+            args=args,
+            vararg=vararg,
+            kwonlyargs=kwonlyargs,
+            kw_defaults=kw_defaults,
+            kwarg=kwarg,
+            defaults=defaults,
+        )
 
     # Leaves
     def visit_NAME(self, leaf: Leaf) -> ast.AST:

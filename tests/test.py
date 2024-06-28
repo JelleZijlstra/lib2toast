@@ -186,3 +186,20 @@ def test_byte_string() -> None:
     assert_compiles(r"b'\x33'")
     assert_compiles(r"rb'\x33'")
     assert_compiles(r"b'\x33' b'\x44'")
+
+
+def test_lambda() -> None:
+    assert_compiles("lambda: 1")
+    assert_compiles("lambda x: x")
+    assert_compiles("lambda x, y: x + y")
+    assert_compiles("lambda x=1: x")
+    assert_compiles("lambda x=1, y=2: x + y")
+    assert_compiles("lambda x, y=2, /: x + y")
+    assert_compiles("lambda x, y=2, *, z=3: x + y + z")
+    assert_compiles("lambda x, y=2, /, z=3: x + y + z")
+    assert_compiles("lambda x, y=2, /, *, z=3: x + y + z")
+    assert_compiles("lambda *args: 1")
+    assert_compiles("lambda **kwargs: 1")
+    assert_compiles("lambda x, *args: x")
+    assert_compiles("lambda x, **kwargs: x")
+    assert_compiles("lambda *args, x: x")
