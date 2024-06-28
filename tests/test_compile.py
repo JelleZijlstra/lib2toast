@@ -254,6 +254,12 @@ def test_simple_statements() -> None:
     assert_compiles("continue")
 
 
+def test_raise() -> None:
+    assert_compiles("raise")
+    assert_compiles("raise a")
+    assert_compiles("raise a from b")
+
+
 def test_yield() -> None:
     assert_compiles("yield")
     assert_compiles("yield 1")

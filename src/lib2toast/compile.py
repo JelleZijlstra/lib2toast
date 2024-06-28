@@ -360,6 +360,18 @@ class Compiler(Visitor[ast.AST]):
             targets = [target]
         return ast.Delete(targets=targets, **get_line_range(node))
 
+    def visit_raise_stmt(self, node: Node) -> ast.Raise:
+        exc = self.visit_typed(node.children[1], ast.expr)
+        if len(node.children) > 2:
+            assert isinstance(node.children[2], Leaf)
+            if node.children[2].value != "from":
+                # blib2to3 supports Python 2-style raise a, b, c
+                raise UnsupportedSyntaxError("raise")
+            cause = self.visit_typed(node.children[3], ast.expr)
+        else:
+            cause = None
+        return ast.Raise(exc=exc, cause=cause, **get_line_range(node))
+
     def visit_return_stmt(self, node: Node) -> ast.AST:
         return ast.Return(
             value=self.visit_typed(node.children[1], ast.expr), **get_line_range(node)
