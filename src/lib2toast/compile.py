@@ -96,14 +96,18 @@ def _get_line_range_for_lvb(node: LVB) -> LineRange:
     elif isinstance(node, tuple):
         return _get_line_range_for_lvb(node[1])
     else:
-        assert node.end_lineno is not None
-        assert node.end_col_offset is not None
-        return LineRange(
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-            end_lineno=node.end_lineno,
-            end_col_offset=node.end_col_offset,
-        )
+        return get_line_range_for_ast(node)
+
+
+def get_line_range_for_ast(node: Union[ast.expr, ast.stmt]) -> LineRange:
+    assert node.end_lineno is not None
+    assert node.end_col_offset is not None
+    return LineRange(
+        lineno=node.lineno,
+        col_offset=node.col_offset,
+        end_lineno=node.end_lineno,
+        end_col_offset=node.end_col_offset,
+    )
 
 
 def unify_line_ranges(begin_range: LineRange, end_range: LineRange) -> LineRange:
@@ -532,7 +536,7 @@ class Compiler(Visitor[ast.AST]):
             statements = [
                 self.visit_typed(child, ast.stmt) for child in node.children[2:-1]
             ]
-            return statements, get_line_range(node.children[-2], ignore_last_leaf=True)
+            return statements, get_line_range_for_ast(statements[-1])
         else:
             return [self.visit_typed(node, ast.stmt)], get_line_range(
                 node, ignore_last_leaf=True

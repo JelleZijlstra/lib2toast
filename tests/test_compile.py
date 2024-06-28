@@ -524,6 +524,14 @@ def test_class_def() -> None:
         assert_compiles("class A[T, U]: pass")
         assert_compiles("class A[T: int]: pass")
 
+    assert_compiles(
+        """
+        class A:
+            def f():
+                pass
+        """
+    )
+
 
 def test_decorators() -> None:
     assert_compiles("@a\ndef f(): pass")
