@@ -1,10 +1,12 @@
 import ast
 import sys
+import textwrap
 
 from lib2toast.compile import compile
 
 
 def assert_compiles(code: str) -> None:
+    code = textwrap.dedent(code)
     our_code = compile(code)
     ast_code = ast.parse(code)
     assert ast.dump(our_code, include_attributes=True, indent=2) == ast.dump(
@@ -312,3 +314,51 @@ def test_import_from() -> None:
     assert_compiles("from .a import b")
     assert_compiles("from a import *")
     assert_compiles("from .a import *")
+
+
+def test_if() -> None:
+    assert_compiles("if a: pass")
+    assert_compiles("if a: pass\nelse: pass")
+    assert_compiles("if a: pass\nelif b: pass")
+    assert_compiles("if a: pass\nelif b: pass\nelse: pass")
+    assert_compiles("if a: 1")
+    assert_compiles(
+        """
+        if a:
+            pass
+        """
+    )
+    assert_compiles(
+        """
+        if a:
+            1
+            pass
+        elif b:
+            2
+            pass
+        else:
+            3
+            pass
+        """
+    )
+
+
+def test_while() -> None:
+    assert_compiles("while a: pass")
+    assert_compiles("while a: pass\nelse: pass")
+    assert_compiles(
+        """
+        while a:
+            pass
+        """
+    )
+    assert_compiles(
+        """
+        while a:
+            1
+            pass
+        else:
+            2
+            pass
+        """
+    )

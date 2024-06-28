@@ -76,12 +76,16 @@ def get_line_range_for_leaf(leaf: Leaf) -> LineRange:
     )
 
 
-def get_line_range(node: NL) -> LineRange:
+def get_line_range(node: NL, *, ignore_last_leaf: bool = False) -> LineRange:
     if isinstance(node, Leaf):
         return get_line_range_for_leaf(node)
     else:
         begin_range = get_line_range(node.children[0])
-        end_range = get_line_range(node.children[-1])
+        last_child = node.children[-1]
+        if ignore_last_leaf and isinstance(last_child, Leaf):
+            end_range = get_line_range(node.children[-2])
+        else:
+            end_range = get_line_range(last_child, ignore_last_leaf=ignore_last_leaf)
         return unify_line_ranges(begin_range, end_range)
 
 
@@ -490,6 +494,66 @@ class Compiler(Visitor[ast.AST]):
             )
         else:
             raise UnsupportedSyntaxError("Type alias")
+
+    # Compound statements
+    def compile_suite(self, node: NL) -> tuple[list[ast.stmt], LineRange]:
+        if isinstance(node, Node) and node.type == syms.suite:
+            statements = [
+                self.visit_typed(child, ast.stmt) for child in node.children[2:-1]
+            ]
+            return statements, get_line_range(node.children[-2], ignore_last_leaf=True)
+        else:
+            return [self.visit_typed(node, ast.stmt)], get_line_range(
+                node, ignore_last_leaf=True
+            )
+
+    def visit_if_stmt(self, node: Node) -> ast.If:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)
+        test = self.visit_typed(consumer.expect(), ast.expr)
+        consumer.expect(token.COLON)
+        suite, end_line_range = self.compile_suite(consumer.expect())
+        orelse, maybe_line_range = self._compile_if_recursive(consumer)
+        if maybe_line_range is not None:
+            end_line_range = maybe_line_range
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        return ast.If(test=test, body=suite, orelse=orelse, **line_range)
+
+    def _compile_if_recursive(
+        self, consumer: _Consumer
+    ) -> tuple[list[ast.stmt], Optional[LineRange]]:
+        if consumer.done():
+            return [], None
+        keyword = consumer.expect(token.NAME)
+        assert isinstance(keyword, Leaf) and keyword.value in ("elif", "else")
+        if keyword.value == "else":
+            consumer.expect(token.COLON)
+            return self.compile_suite(consumer.expect())
+        else:
+            test = self.visit_typed(consumer.expect(), ast.expr)
+            consumer.expect(token.COLON)
+            suite, end_line_range = self.compile_suite(consumer.expect())
+            orelse, maybe_line_range = self._compile_if_recursive(consumer)
+            if maybe_line_range is not None:
+                end_line_range = maybe_line_range
+            line_range = unify_line_ranges(get_line_range(keyword), end_line_range)
+            return [
+                ast.If(test=test, body=suite, orelse=orelse, **line_range)
+            ], end_line_range
+
+    def visit_while_stmt(self, node: Node) -> ast.While:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)
+        test = self.visit_typed(consumer.expect(), ast.expr)
+        consumer.expect(token.COLON)
+        body, end_line_range = self.compile_suite(consumer.expect())
+        if consumer.consume(token.NAME) is not None:
+            consumer.expect(token.COLON)
+            orelse, end_line_range = self.compile_suite(consumer.expect())
+        else:
+            orelse = []
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        return ast.While(test=test, body=body, orelse=orelse, **line_range)
 
     # Expressions
     def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
