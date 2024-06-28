@@ -302,6 +302,20 @@ if sys.version_info >= (3, 12):
         assert_compiles("type x[T: (str, int), U: float] = int")
 
 
+if sys.version_info >= (3, 13):
+
+    def test_type_param_default() -> None:
+        assert_compiles("type x[T = int] = int")
+        assert_compiles("type x[T = int, U = str] = int")
+        assert_compiles("type x[T: str = int] = int")
+        assert_compiles("type x[T: str | int = int] = int")
+        assert_compiles("type x[T: (str, int) = int] = int")
+        assert_compiles("type x[T: (str, int) = int, U: float = int] = int")
+        assert_compiles("type x[*Ts = int] = int")
+        assert_compiles("type x[*Ts = *int] = int")
+        assert_compiles("type x[**P = int] = int")
+
+
 def test_import() -> None:
     assert_compiles("import a")
     assert_compiles("import a as b")
@@ -501,7 +515,9 @@ def test_function_def() -> None:
     assert_compiles("def f(x: int = 1): pass")
     assert_compiles("def f(*, x: int) -> str: pass")
     assert_compiles("def f(*, x: int = 1) -> str: pass")
-    assert_compiles("def f(*args: *Ts) -> str: pass")
+    assert_compiles("def f(*args: int) -> str: pass")
+    if sys.version_info >= (3, 11):
+        assert_compiles("def f(*args: *Ts) -> str: pass")
     assert_compiles("def f(**kwargs: int) -> str: pass")
 
     if sys.version_info >= (3, 12):
