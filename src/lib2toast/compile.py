@@ -731,6 +731,22 @@ class Compiler(Visitor[ast.AST]):
         else:
             raise UnsupportedSyntaxError("async")
 
+    visit_async_funcdef = visit_async_stmt
+
+    def compile_decorators(self, node: NL) -> list[ast.expr]:
+        if node.type == syms.decorator:
+            return [self.visit_typed(node.children[1], ast.expr)]
+        else:
+            assert node.type == syms.decorators
+            return [
+                self.visit_typed(child.children[1], ast.expr) for child in node.children
+            ]
+
+    def visit_decorated(self, node: Node) -> ast.stmt:
+        decorator_list = self.compile_decorators(node.children[0])
+        stmt = self.visit_typed(node.children[1], ast.stmt)
+        return replace(stmt, decorator_list=decorator_list)
+
     def compile_except_clause(
         self, node: Node, outer_consumer: _Consumer
     ) -> tuple[ast.excepthandler, LineRange, bool]:

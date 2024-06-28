@@ -508,3 +508,13 @@ def test_class_def() -> None:
         assert_compiles("class A[T]: pass")
         assert_compiles("class A[T, U]: pass")
         assert_compiles("class A[T: int]: pass")
+
+
+def test_decorators() -> None:
+    assert_compiles("@a\ndef f(): pass")
+    assert_compiles("@a\n@b\ndef f(): pass")
+    assert_compiles("@a\n@b(c)\ndef f(): pass")
+    assert_compiles("@a\ndef f(): pass\n@b\ndef g(): pass")
+    assert_compiles("@a\ndef f(): pass\n@b(c)\ndef g(): pass")
+    assert_compiles("@a\nasync def f(): pass")
+    assert_compiles("@a\n@b\nclass f(): pass")
