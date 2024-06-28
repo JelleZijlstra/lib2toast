@@ -351,10 +351,22 @@ class Compiler(Visitor[ast.AST]):
                 **get_line_range(node),
             )
 
+    def visit_del_stmt(self, node: Node) -> ast.AST:
+        with self.set_expr_context(ast.Del()):
+            target = self.visit_typed(node.children[1], ast.expr)
+        if isinstance(target, ast.Tuple) and node.children[1].type != syms.atom:
+            targets = target.elts
+        else:
+            targets = [target]
+        return ast.Delete(targets=targets, **get_line_range(node))
+
+    def visit_return_stmt(self, node: Node) -> ast.AST:
+        return ast.Return(
+            value=self.visit_typed(node.children[1], ast.expr), **get_line_range(node)
+        )
+
     # Expressions
-    def visit_testlist_gexp(
-        self, node: Node, parent_node: Optional[Node] = None
-    ) -> ast.AST:
+    def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
         if parent_node is None:
             parent_node = node
         if node.children[1].type == syms.old_comp_for:
@@ -368,7 +380,7 @@ class Compiler(Visitor[ast.AST]):
             elts=elts, ctx=self.expr_context, **get_line_range(parent_node)
         )
 
-    visit_testlist_star_expr = visit_testlist_gexp
+    visit_testlist_star_expr = visit_testlist_gexp = visit_exprlist
 
     def visit_atom(self, node: Node) -> ast.AST:
         if node.children[0].type == token.LPAR:
@@ -1102,9 +1114,32 @@ class Compiler(Visitor[ast.AST]):
             defaults=defaults,
         )
 
+    def visit_yield_expr(self, node: Node) -> Union[ast.Yield, ast.YieldFrom]:
+        if node.children[1].type == syms.yield_arg:
+            return ast.YieldFrom(
+                value=self.visit_typed(node.children[1].children[1], ast.expr),
+                **get_line_range(node),
+            )
+        return ast.Yield(
+            value=self.visit_typed(node.children[1], ast.expr), **get_line_range(node)
+        )
+
     # Leaves
     def visit_NAME(self, leaf: Leaf) -> ast.AST:
-        return ast.Name(id=leaf.value, ctx=self.expr_context, **get_line_range(leaf))
+        line_range = get_line_range(leaf)
+        if leaf.value == "return":
+            return ast.Return(value=None, **line_range)
+        elif leaf.value == "pass":
+            return ast.Pass(**line_range)
+        elif leaf.value == "break":
+            return ast.Break(**line_range)
+        elif leaf.value == "continue":
+            return ast.Continue(**line_range)
+        elif leaf.value == "yield":
+            return ast.Yield(value=None, **line_range)
+        elif leaf.value == "raise":
+            return ast.Raise(exc=None, cause=None, **line_range)
+        return ast.Name(id=leaf.value, ctx=self.expr_context, **line_range)
 
     def visit_NUMBER(self, leaf: Leaf) -> ast.AST:
         return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))

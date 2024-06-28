@@ -233,3 +233,34 @@ def test_assignment() -> None:
     assert_compiles("a ^= b")
     assert_compiles("a |= b")
     assert_compiles("a.b += c")
+
+
+def test_del() -> None:
+    assert_compiles("del a")
+    assert_compiles("del a.b")
+    assert_compiles("del a[b]")
+    assert_compiles("del a, b")
+    assert_compiles("del (a, b)")
+
+
+def test_return() -> None:
+    assert_compiles("return 1")
+    assert_compiles("return")
+
+
+def test_simple_statements() -> None:
+    assert_compiles("pass")
+    assert_compiles("break")
+    assert_compiles("continue")
+
+
+def test_yield() -> None:
+    assert_compiles("yield")
+    assert_compiles("yield 1")
+    assert_compiles("yield 1, 2")
+    assert_compiles("(yield)")
+    assert_compiles("(yield 1)")
+
+    assert_compiles("yield from a")
+    assert_compiles("yield from (a, b)")
+    assert_compiles("(yield from a)")
