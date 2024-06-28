@@ -88,6 +88,10 @@ def test_call() -> None:
     assert_compiles("f(a[b])")
 
 
+def test_named_expr() -> None:
+    assert_compiles("(a := b)")
+
+
 def test_compare() -> None:
     assert_compiles("1 < 2")
     assert_compiles("1 <= 2")

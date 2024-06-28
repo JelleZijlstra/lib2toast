@@ -1458,6 +1458,9 @@ class Compiler(Visitor[ast.AST]):
             ),
         )
 
+    def visit_namedexpr_test(self, node: Node) -> ast.NamedExpr:
+        return self._compile_named_expr(node.children)
+
     def visit_subscript(self, node: Node) -> Union[ast.expr, ast.Slice]:
         if (
             len(node.children) == 3
