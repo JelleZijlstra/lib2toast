@@ -644,6 +644,97 @@ class Compiler(Visitor[ast.AST]):
         else:
             raise UnsupportedSyntaxError("async")
 
+    def compile_except_clause(
+        self, node: Node, outer_consumer: _Consumer
+    ) -> tuple[ast.excepthandler, LineRange, bool]:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)  # except
+        if consumer.consume(token.STAR) is not None:
+            is_try_star = True
+        else:
+            is_try_star = False
+        if (type_node := consumer.consume()) is not None:
+            typ = self.visit_typed(type_node, ast.expr)
+        else:
+            typ = None
+        if consumer.consume():  # as or comma
+            with self.set_expr_context(ast.Store()):
+                name_tree = self.visit_typed(consumer.expect(), ast.expr)
+            if not isinstance(name_tree, ast.Name):
+                raise UnsupportedSyntaxError("ExceptHandler name")
+            name = name_tree.id
+        else:
+            name = None
+
+        outer_consumer.expect(token.COLON)
+        suite, end_line_range = self.compile_suite(outer_consumer.expect())
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        return (
+            ast.ExceptHandler(type=typ, name=name, body=suite, **line_range),
+            end_line_range,
+            is_try_star,
+        )
+
+    def visit_try_stmt(self, node: Node) -> ast.stmt:
+        is_try_star = False
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)  # try
+        consumer.expect(token.COLON)
+        body, end_line_range = self.compile_suite(consumer.expect())
+        handlers = []
+        orelse = []
+        finalbody = []
+        while not consumer.done():
+            keyword = consumer.expect()
+            if isinstance(keyword, Node):
+                assert keyword.type == syms.except_clause
+                handler, end_line_range, is_try_star = self.compile_except_clause(
+                    keyword, consumer
+                )
+                handlers.append(handler)
+            else:
+                assert keyword.type == token.NAME and keyword.value in (
+                    "else",
+                    "except",
+                    "finally",
+                ), repr(keyword)
+                consumer.expect(token.COLON)
+                suite, end_line_range = self.compile_suite(consumer.expect())
+                if keyword.value == "else":
+                    orelse = suite
+                elif keyword.value == "except":
+                    line_range = unify_line_ranges(
+                        get_line_range(keyword), end_line_range
+                    )
+                    handlers.append(
+                        ast.ExceptHandler(
+                            type=None, name=None, body=suite, **line_range
+                        )
+                    )
+                else:
+                    finalbody = suite
+
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        if is_try_star:
+            if sys.version_info >= (3, 11):
+                return ast.TryStar(
+                    body=body,
+                    handlers=handlers,
+                    orelse=orelse,
+                    finalbody=finalbody,
+                    **line_range,
+                )
+            else:
+                raise UnsupportedSyntaxError("try star")
+        else:
+            return ast.Try(
+                body=body,
+                handlers=handlers,
+                orelse=orelse,
+                finalbody=finalbody,
+                **line_range,
+            )
+
     # Expressions
     def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
         if parent_node is None:

@@ -434,3 +434,45 @@ def test_async_with() -> None:
             pass
         """
     )
+
+
+def test_try() -> None:
+    assert_compiles("try: pass\nexcept: pass")
+    assert_compiles("try: pass\nfinally: pass")
+    assert_compiles("try: pass\nexcept a: pass")
+    assert_compiles("try: pass\nexcept a as b: pass")
+    assert_compiles("try: pass\nexcept a as b: pass\nelse: pass")
+    assert_compiles("try: pass\nexcept a as b: pass\nelse: pass\nfinally: pass")
+    assert_compiles(
+        """
+        try:
+            pass
+        except a as b:
+            pass
+        else:
+            pass
+        finally:
+            pass
+        """
+    )
+
+
+if sys.version_info >= (3, 11):
+
+    def test_try_star() -> None:
+        assert_compiles("try: pass\nexcept* a as b: pass")
+        assert_compiles("try: pass\nexcept* b: pass")
+        assert_compiles("try: pass\nexcept* a as c: pass")
+        assert_compiles("try: pass\nexcept* a as b: pass\nelse: pass\nfinally: pass")
+        assert_compiles(
+            """
+            try:
+                pass
+            except* b as c:
+                pass
+            else:
+                pass
+            finally:
+                pass
+            """
+        )
