@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "black",
+    "typing-extensions",
 ]
 
 [tool.pyright]
@@ -63,6 +64,7 @@ lint.ignore = [
   "PLR0915",
   "RET507",
   "PD011",
+  "PT018",
 ]
 
 line-length = 100
