@@ -362,3 +362,75 @@ def test_while() -> None:
             pass
         """
     )
+
+
+def test_for() -> None:
+    assert_compiles("for a in b: pass")
+    assert_compiles("for a in b: pass\nelse: pass")
+    assert_compiles(
+        """
+        for a in b:
+            pass
+        """
+    )
+    assert_compiles(
+        """
+        for a in b:
+            1
+            pass
+        else:
+            2
+            pass
+        """
+    )
+
+
+def test_with() -> None:
+    assert_compiles("with a: pass")
+    assert_compiles("with a as b: pass")
+    assert_compiles("with a as b, c: pass")
+    assert_compiles("with a as b, c as d: pass")
+    assert_compiles("with a as b, c as d: 1")
+    assert_compiles(
+        """
+        with a as b, c as d:
+            1
+            pass
+        """
+    )
+
+
+def test_async_for() -> None:
+    assert_compiles("async for a in b: pass")
+    assert_compiles("async for a in b: pass\nelse: pass")
+    assert_compiles(
+        """
+        async for a in b:
+            pass
+        """
+    )
+    assert_compiles(
+        """
+        async for a in b:
+            1
+            pass
+        else:
+            2
+            pass
+        """
+    )
+
+
+def test_async_with() -> None:
+    assert_compiles("async with a: pass")
+    assert_compiles("async with a as b: pass")
+    assert_compiles("async with a as b, c: pass")
+    assert_compiles("async with a as b, c as d: pass")
+    assert_compiles("async with a as b, c as d: 1")
+    assert_compiles(
+        """
+        async with a as b, c as d:
+            1
+            pass
+        """
+    )

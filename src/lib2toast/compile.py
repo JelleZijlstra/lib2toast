@@ -6,6 +6,7 @@ import sys
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from token import ASYNC
 from typing import Callable, Generic, Optional, TypeVar, Union
 
 from blib2to3 import pygram
@@ -554,6 +555,94 @@ class Compiler(Visitor[ast.AST]):
             orelse = []
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         return ast.While(test=test, body=body, orelse=orelse, **line_range)
+
+    def visit_for_stmt(self, node: Node) -> ast.For:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)  # for
+        with self.set_expr_context(ast.Store()):
+            target = self.visit_typed(consumer.expect(), ast.expr)
+        consumer.expect(token.NAME)  # in
+        iter = self.visit_typed(consumer.expect(), ast.expr)
+        consumer.expect(token.COLON)
+        body, end_line_range = self.compile_suite(consumer.expect())
+        if consumer.consume(token.NAME) is not None:
+            consumer.expect(token.COLON)
+            orelse, end_line_range = self.compile_suite(consumer.expect())
+        else:
+            orelse = []
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        return ast.For(target=target, iter=iter, body=body, orelse=orelse, **line_range)
+
+    def visit_with_stmt(self, node: Node) -> ast.With:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)  # with
+        with_items = []
+        while True:
+            with_item_node = consumer.expect()
+            if (
+                isinstance(with_item_node, Node)
+                and with_item_node.type == syms.asexpr_test
+            ):
+                context_expr = self.visit_typed(with_item_node.children[0], ast.expr)
+                with self.set_expr_context(ast.Store()):
+                    optional_vars = self.visit_typed(
+                        with_item_node.children[2], ast.expr
+                    )
+            else:
+                context_expr = self.visit_typed(with_item_node, ast.expr)
+                optional_vars = None
+            with_items.append(
+                ast.withitem(context_expr=context_expr, optional_vars=optional_vars)
+            )
+            if consumer.consume(token.COMMA) is not None:
+                continue
+            elif consumer.consume(token.COLON) is not None:
+                break
+            else:
+                raise UnsupportedSyntaxError("with")
+        suite, end_line_range = self.compile_suite(consumer.expect())
+        line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
+        return ast.With(items=with_items, body=suite, **line_range)
+
+    def visit_async_stmt(self, node: Node) -> ast.AST:
+        async_node = node.children[0]
+        assert isinstance(async_node, Leaf) and async_node.type == ASYNC
+        begin_line_range = get_line_range(async_node)
+        child = self.visit(node.children[1])
+        if isinstance(child, ast.With):
+            return ast.AsyncWith(
+                items=child.items,
+                body=child.body,
+                lineno=begin_line_range["lineno"],
+                col_offset=begin_line_range["col_offset"],
+                end_lineno=child.end_lineno,
+                end_col_offset=child.end_col_offset,
+            )
+        elif isinstance(child, ast.For):
+            return ast.AsyncFor(
+                target=child.target,
+                iter=child.iter,
+                body=child.body,
+                orelse=child.orelse,
+                lineno=begin_line_range["lineno"],
+                col_offset=begin_line_range["col_offset"],
+                end_lineno=child.end_lineno,
+                end_col_offset=child.end_col_offset,
+            )
+        elif isinstance(child, ast.FunctionDef):
+            return ast.AsyncFunctionDef(
+                name=child.name,
+                args=child.args,
+                body=child.body,
+                decorator_list=child.decorator_list,
+                returns=child.returns,
+                lineno=begin_line_range["lineno"],
+                col_offset=begin_line_range["col_offset"],
+                end_lineno=child.end_lineno,
+                end_col_offset=child.end_col_offset,
+            )
+        else:
+            raise UnsupportedSyntaxError("async")
 
     # Expressions
     def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
