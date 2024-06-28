@@ -1664,6 +1664,10 @@ class Compiler(Visitor[ast.AST]):
     def visit_COLON(self, leaf: Leaf) -> ast.AST:
         return ast.Slice(lower=None, upper=None, step=None, **get_line_range(leaf))
 
+    def visit_ENDMARKER(self, _leaf: Leaf) -> ast.AST:
+        # empty module
+        return ast.Module(body=[], type_ignores=[])
+
 
 def compile(code: str) -> ast.AST:
     return Compiler().visit(parse(code + "\n"))

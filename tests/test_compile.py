@@ -533,3 +533,7 @@ def test_decorators() -> None:
     assert_compiles("@a\ndef f(): pass\n@b(c)\ndef g(): pass")
     assert_compiles("@a\nasync def f(): pass")
     assert_compiles("@a\n@b\nclass f(): pass")
+
+
+def test_empty() -> None:
+    assert_compiles("")
