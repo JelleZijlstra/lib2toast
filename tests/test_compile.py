@@ -1,4 +1,5 @@
 import ast
+import sys
 
 from lib2toast.compile import compile
 
@@ -260,6 +261,13 @@ def test_raise() -> None:
     assert_compiles("raise a from b")
 
 
+def test_global_nonlocal() -> None:
+    assert_compiles("global a")
+    assert_compiles("global a, b")
+    assert_compiles("nonlocal a")
+    assert_compiles("nonlocal a, b")
+
+
 def test_yield() -> None:
     assert_compiles("yield")
     assert_compiles("yield 1")
@@ -270,3 +278,17 @@ def test_yield() -> None:
     assert_compiles("yield from a")
     assert_compiles("yield from (a, b)")
     assert_compiles("(yield from a)")
+
+
+if sys.version_info >= (3, 12):
+
+    def test_type() -> None:
+        assert_compiles("type x = int")
+        assert_compiles("type x[T] = int")
+        assert_compiles("type x[T] = int | str")
+        assert_compiles("type x[*Ts] = int")
+        assert_compiles("type x[T, U] = int")
+        assert_compiles("type x[**P] = int")
+        assert_compiles("type x[T: str] = int")
+        assert_compiles("type x[T: str | int] = int")
+        assert_compiles("type x[T: (str, int), U: float] = int")

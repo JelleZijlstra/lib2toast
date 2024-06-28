@@ -223,8 +223,9 @@ class Compiler(Visitor[ast.AST]):
         finally:
             self.expr_context = old_expr_context
 
-    def visit_typevar(self, node: Node) -> ast.AST:
-        if sys.version_info >= (3, 12):
+    if sys.version_info >= (3, 12):
+
+        def visit_typevar(self, node: Node) -> ast.AST:
             bound = None
             default = None
             for index in (1, 3):
@@ -247,43 +248,57 @@ class Compiler(Visitor[ast.AST]):
                 return ast.TypeVar(
                     name=node.children[0].value, bound=bound, **get_line_range(node)
                 )
-        else:
-            raise UnsupportedSyntaxError("TypeVar")
 
-    def visit_paramspec(self, node: Node) -> ast.AST:
-        if sys.version_info >= (3, 13):
-            if len(node.children) == 4:
-                default_value = self.visit(node.children[3])
+        def visit_paramspec(self, node: Node) -> ast.AST:
+            if sys.version_info >= (3, 13):
+                if len(node.children) == 4:
+                    default_value = self.visit(node.children[3])
+                else:
+                    default_value = None
+                return ast.ParamSpec(
+                    name=node.children[1].value,
+                    default_value=default_value,
+                    **get_line_range(node),
+                )
             else:
-                default_value = None
-            return ast.ParamSpec(
-                name=node.children[0].value,
-                default_value=default_value,
-                **get_line_range(node),
-            )
-        if sys.version_info >= (3, 12):
-            return ast.ParamSpec(name=node.children[0].value, **get_line_range(node))
-        else:
-            raise UnsupportedSyntaxError("ParamSpec")
+                return ast.ParamSpec(
+                    name=node.children[1].value, **get_line_range(node)
+                )
 
-    def visit_typevartuple(self, node: Node) -> ast.AST:
-        if sys.version_info >= (3, 13):
-            if len(node.children) == 4:
-                default_value = self.visit(node.children[3])
+        def visit_typevartuple(self, node: Node) -> ast.TypeVarTuple:
+            if sys.version_info >= (3, 13):
+                if len(node.children) == 4:
+                    default_value = self.visit(node.children[3])
+                else:
+                    default_value = None
+                return ast.TypeVarTuple(
+                    name=node.children[1].value,
+                    default_value=default_value,
+                    **get_line_range(node),
+                )
             else:
-                default_value = None
-            return ast.TypeVarTuple(
-                name=node.children[0].value,
-                default_value=default_value,
-                **get_line_range(node),
-            )
-        if sys.version_info >= (3, 12):
-            return ast.TypeVarTuple(name=node.children[0].value, **get_line_range(node))
-        else:
-            raise UnsupportedSyntaxError("TypeVarTuple")
+                return ast.TypeVarTuple(
+                    name=node.children[1].value, **get_line_range(node)
+                )
 
-    def visit_typeparam(self, node: Node) -> ast.AST:
-        return self.visit(node.children[0])
+        def _make_type_param(self, node: NL) -> ast.type_param:
+            result = self.visit(node)
+            if isinstance(result, ast.type_param):
+                return result
+            elif isinstance(result, ast.Name):
+                return ast.TypeVar(name=result.id, **get_line_range(node))
+            else:
+                raise UnsupportedSyntaxError("Type parameter")
+
+        def compile_typeparams(self, node: NL) -> list[ast.type_param]:
+            if isinstance(node, Leaf):
+                return [ast.TypeVar(name=node.value, **get_line_range(node))]
+            return [self._make_type_param(child) for child in node.children[1::2]]
+
+    else:
+
+        def compile_typeparams(self, node: NL) -> list[ast.expr]:
+            raise UnsupportedSyntaxError(f"Type parameters: {node!r}")
 
     def visit_file_input(self, node: Node) -> ast.AST:
         return ast.Module(
@@ -372,10 +387,53 @@ class Compiler(Visitor[ast.AST]):
             cause = None
         return ast.Raise(exc=exc, cause=cause, **get_line_range(node))
 
+    def visit_assert_stmt(self, node: Node) -> ast.Assert:
+        return ast.Assert(
+            test=self.visit_typed(node.children[1], ast.expr),
+            msg=(
+                self.visit_typed(node.children[3], ast.expr)
+                if len(node.children) > 3
+                else None
+            ),
+            **get_line_range(node),
+        )
+
+    def visit_global_stmt(self, node: Node) -> Union[ast.Global, ast.Nonlocal]:
+        names = []
+        for name_node in node.children[1::2]:
+            assert isinstance(name_node, Leaf)
+            names.append(name_node.value)
+        assert isinstance(node.children[0], Leaf)
+        if node.children[0].value == "global":
+            return ast.Global(names=names, **get_line_range(node))
+        else:
+            return ast.Nonlocal(names=names, **get_line_range(node))
+
     def visit_return_stmt(self, node: Node) -> ast.AST:
         return ast.Return(
             value=self.visit_typed(node.children[1], ast.expr), **get_line_range(node)
         )
+
+    def visit_type_stmt(self, node: Node) -> ast.AST:
+        assert (
+            isinstance(node.children[1], Leaf) and node.children[1].type == token.NAME
+        )
+        name = ast.Name(
+            id=node.children[1].value,
+            ctx=ast.Store(),
+            **get_line_range(node.children[1]),
+        )
+        value = self.visit_typed(node.children[-1], ast.expr)
+        if len(node.children) == 5:
+            type_params = self.compile_typeparams(node.children[2])
+        else:
+            type_params = []
+        if sys.version_info >= (3, 12):
+            return ast.TypeAlias(
+                name=name, type_params=type_params, value=value, **get_line_range(node)
+            )
+        else:
+            raise UnsupportedSyntaxError("Type alias")
 
     # Expressions
     def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
