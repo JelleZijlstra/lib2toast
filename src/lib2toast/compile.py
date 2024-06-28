@@ -829,7 +829,7 @@ class Compiler(Visitor[ast.AST]):
             is_async = 0
             children = node.children
         if len(children) > 4:
-            assert isinstance(children[4], Node) and children[4].type == syms.comp_iter
+            assert isinstance(children[4], Node)
             ifs, comps = self._compile_comp_iter(children[4])
         else:
             ifs = []
@@ -854,10 +854,7 @@ class Compiler(Visitor[ast.AST]):
             test = self.visit(node.children[1])
             assert isinstance(test, ast.expr)
             if len(node.children) > 2:
-                assert (
-                    isinstance(node.children[2], Node)
-                    and node.children[2].type == syms.comp_iter
-                )
+                assert isinstance(node.children[2], Node)
                 ifs, comps = self._compile_comp_iter(node.children[2])
             else:
                 ifs = []
