@@ -1150,7 +1150,7 @@ class Compiler(Visitor[ast.AST]):
             elif isinstance(node, tuple):
                 fstring_start, fstring_middle = node
                 end = fstring_start.value.lstrip("rRfF")
-                string = f"{fstring_start}{fstring_middle}{end}"
+                string = f"{fstring_start.value}{fstring_middle}{end}"
                 strings.append(literal_eval(string))
             elif node.type == token.STRING:
                 strings.append(ast.literal_eval(node.value))
