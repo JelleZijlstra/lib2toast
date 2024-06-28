@@ -414,6 +414,36 @@ class Compiler(Visitor[ast.AST]):
             value=self.visit_typed(node.children[1], ast.expr), **get_line_range(node)
         )
 
+    def visit_import_name(self, node: Node) -> ast.Import:
+        aliases: list[ast.alias] = []
+        if (
+            isinstance(node.children[1], Node)
+            and node.children[1].type == syms.dotted_as_names
+        ):
+            children = node.children[1].children[::2]
+        else:
+            children = [node.children[1]]
+        for child in children:
+            if child.type == syms.dotted_as_name:
+                name_node, _, asname_node = child.children
+                assert isinstance(asname_node, Leaf) and asname_node.type == token.NAME
+                asname = asname_node.value
+            else:
+                name_node = child
+                asname = None
+            if isinstance(name_node, Leaf):
+                assert name_node.type == token.NAME
+                name = name_node.value
+            else:
+                name_pieces = []
+                for c in name_node.children:
+                    assert isinstance(c, Leaf) and c.type in (token.NAME, token.DOT)
+                    name_pieces.append(c.value)
+                name = "".join(name_pieces)
+
+            aliases.append(ast.alias(name=name, asname=asname, **get_line_range(child)))
+        return ast.Import(names=aliases, **get_line_range(node))
+
     def visit_type_stmt(self, node: Node) -> ast.AST:
         assert (
             isinstance(node.children[1], Leaf) and node.children[1].type == token.NAME

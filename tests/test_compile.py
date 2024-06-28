@@ -292,3 +292,12 @@ if sys.version_info >= (3, 12):
         assert_compiles("type x[T: str] = int")
         assert_compiles("type x[T: str | int] = int")
         assert_compiles("type x[T: (str, int), U: float] = int")
+
+
+def test_import() -> None:
+    assert_compiles("import a")
+    assert_compiles("import a as b")
+    assert_compiles("import a.b")
+    assert_compiles("import a.b as c")
+    assert_compiles("import a, b")
+    assert_compiles("import a . b")
