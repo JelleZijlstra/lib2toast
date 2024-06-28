@@ -301,3 +301,14 @@ def test_import() -> None:
     assert_compiles("import a.b as c")
     assert_compiles("import a, b")
     assert_compiles("import a . b")
+
+
+def test_import_from() -> None:
+    assert_compiles("from a import b")
+    assert_compiles("from a import b as c")
+    assert_compiles("from a import b, c")
+    assert_compiles("from . import a")
+    assert_compiles("from .. import a")
+    assert_compiles("from .a import b")
+    assert_compiles("from a import *")
+    assert_compiles("from .a import *")

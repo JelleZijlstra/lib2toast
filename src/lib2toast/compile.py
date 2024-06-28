@@ -415,16 +415,20 @@ class Compiler(Visitor[ast.AST]):
         )
 
     def visit_import_name(self, node: Node) -> ast.Import:
+        aliases = self.compile_aliases(node.children[1])
+        return ast.Import(names=aliases, **get_line_range(node))
+
+    def compile_aliases(self, node: NL) -> list[ast.alias]:
         aliases: list[ast.alias] = []
-        if (
-            isinstance(node.children[1], Node)
-            and node.children[1].type == syms.dotted_as_names
+        if isinstance(node, Node) and node.type in (
+            syms.dotted_as_names,
+            syms.import_as_names,
         ):
-            children = node.children[1].children[::2]
+            children = node.children[::2]
         else:
-            children = [node.children[1]]
+            children = [node]
         for child in children:
-            if child.type == syms.dotted_as_name:
+            if child.type in (syms.dotted_as_name, syms.import_as_name):
                 name_node, _, asname_node = child.children
                 assert isinstance(asname_node, Leaf) and asname_node.type == token.NAME
                 asname = asname_node.value
@@ -442,7 +446,29 @@ class Compiler(Visitor[ast.AST]):
                 name = "".join(name_pieces)
 
             aliases.append(ast.alias(name=name, asname=asname, **get_line_range(child)))
-        return ast.Import(names=aliases, **get_line_range(node))
+        return aliases
+
+    def visit_import_from(self, node: Node) -> ast.ImportFrom:
+        consumer = _Consumer(node.children)
+        consumer.expect(token.NAME)
+        level = 0
+        while consumer.consume(token.DOT) is not None:
+            level += 1
+        name_node = consumer.expect(token.NAME)
+        assert isinstance(name_node, Leaf)
+        if name_node.value == "import":
+            module = None
+        else:
+            module = name_node.value
+            consumer.expect(token.NAME)
+        if (star := consumer.consume(token.STAR)) is not None:
+            aliases = [ast.alias(name="*", asname=None, **get_line_range(star))]
+        else:
+            consumer.consume(token.LPAR)
+            aliases = self.compile_aliases(consumer.expect())
+        return ast.ImportFrom(
+            module=module, names=aliases, level=level, **get_line_range(node)
+        )
 
     def visit_type_stmt(self, node: Node) -> ast.AST:
         assert (
