@@ -144,6 +144,9 @@ class _Consumer:
         else:
             return None
 
+    def done(self) -> bool:
+        return self.index >= len(self.children)
+
 
 class Compiler(Visitor[ast.AST]):
     expr_context: ast.expr_context = ast.Load()
@@ -238,6 +241,138 @@ class Compiler(Visitor[ast.AST]):
             return val
 
     # Expressions
+    def visit_testlist_gexp(
+        self, node: Node, parent_node: Optional[Node] = None
+    ) -> ast.AST:
+        if parent_node is None:
+            parent_node = node
+        if node.children[1].type == syms.old_comp_for:
+            elt = self.visit(node.children[0])
+            comps = self._compile_comprehension(node.children[1])
+            return ast.GeneratorExp(
+                elt=elt, generators=comps, **get_line_range(parent_node)
+            )
+        elts = [self.visit(child) for child in node.children[::2]]
+        return ast.Tuple(
+            elts=elts, ctx=self.expr_context, **get_line_range(parent_node)
+        )
+
+    def visit_atom(self, node: Node) -> ast.AST:
+        if node.children[0].type == token.LPAR:
+            if len(node.children) == 2:
+                return ast.Tuple(elts=[], ctx=self.expr_context, **get_line_range(node))
+            # tuples, parenthesized expressions
+            if node.children[1].type == syms.testlist_gexp:
+                return self.visit_testlist_gexp(node.children[1], node)
+            return self.visit(node.children[1])
+        elif node.children[0].type == token.LSQB:
+            if len(node.children) == 2:
+                return ast.List(elts=[], ctx=self.expr_context, **get_line_range(node))
+            # lists
+            inner = node.children[1]
+            if inner.type != syms.listmaker:
+                return ast.List(
+                    elts=[self.visit(inner)],
+                    ctx=self.expr_context,
+                    **get_line_range(node),
+                )
+            if inner.children[1].type == syms.old_comp_for:
+                elt = self.visit(inner.children[0])
+                comps = self._compile_comprehension(inner.children[1])
+                return ast.ListComp(elt=elt, generators=comps, **get_line_range(node))
+            elts = [self.visit(child) for child in inner.children[::2]]
+            return ast.List(elts=elts, ctx=self.expr_context, **get_line_range(node))
+        elif node.children[0].type == token.LBRACE:
+            if len(node.children) == 2:
+                return ast.Dict(keys=[], values=[], **get_line_range(node))
+            # sets, dicts
+            inner = node.children[1]
+            if inner.type != syms.dictsetmaker:
+                return ast.Set(
+                    elts=[self.visit(inner)],
+                    ctx=self.expr_context,
+                    **get_line_range(node),
+                )
+            consumer = _Consumer(inner.children)
+            is_dict = False
+            keys = []
+            values = []
+            elts = []
+            while not consumer.done():
+                if consumer.consume(token.DOUBLESTAR) is not None:
+                    is_dict = True
+                    expr = consumer.consume()
+                    keys.append(None)
+                    values.append(self.visit(expr))
+                elif star_expr := consumer.consume(syms.star_expr):
+                    elts.append(
+                        ast.Starred(
+                            value=self.visit(consumer.consume()),
+                            ctx=self.expr_context,
+                            **get_line_range(star_expr),
+                        )
+                    )
+                else:
+                    key_node = consumer.consume()
+                    if (walrus := consumer.consume(token.COLONEQUAL)) is not None:
+                        value_node = consumer.consume()
+                        elt = self._compile_named_expr((key_node, walrus, value_node))
+                        elts.append(elt)
+                    elif consumer.consume(token.COLON) is not None:
+                        key = self.visit(key_node)
+                        value = self.visit(consumer.consume())
+                        keys.append(key)
+                        values.append(value)
+                        is_dict = True
+                    else:
+                        elts.append(self.visit(key_node))
+                    if comp_for := consumer.consume(syms.comp_for):
+                        comps = self._compile_comprehension(comp_for)
+                        if is_dict:
+                            assert len(keys) == 1, keys
+                            assert len(values) == 1, values
+                            assert not elts, elts
+                            return ast.DictComp(
+                                key=keys[0],
+                                value=values[0],
+                                generators=comps,
+                                **get_line_range(node),
+                            )
+                        else:
+                            assert len(elts) == 1, elts
+                            assert not keys, keys
+                            assert not values, values
+                            return ast.SetComp(
+                                elt=elts[0], generators=comps, **get_line_range(node)
+                            )
+                if not consumer.done():
+                    comma = consumer.consume(token.COMMA)
+                    assert comma is not None
+            if is_dict:
+                assert not elts, elts
+                return ast.Dict(keys=keys, values=values, **get_line_range(node))
+            else:
+                assert not keys, keys
+                assert not values, values
+                return ast.Set(elts=elts, ctx=self.expr_context, **get_line_range(node))
+        elif node.children[0].type == token.DOT:
+            # ellipsis
+            assert len(node.children) == 3
+            assert all(child.type == token.DOT for child in node.children)
+            return ast.Constant(value=Ellipsis, **get_line_range(node))
+        elif node.children[0].type == token.BACKQUOTE:
+            # repr. Why not support it?
+            callee = ast.Name(id="repr", ctx=ast.Load(), **get_line_range(node))
+            return ast.Call(
+                func=callee,
+                args=[self.visit(node.children[1])],
+                keywords=[],
+                **get_line_range(node),
+            )
+        else:
+            # concatenated strings, I think
+            raise NotImplementedError(repr(node))
+
     def visit_expr(self, node: Node) -> ast.AST:
         op = self.visit(node.children[0])
         begin_range = get_line_range(node.children[0])
@@ -466,6 +601,7 @@ class Compiler(Visitor[ast.AST]):
         return args, keywords
 
     def _compile_comprehension(self, node: Node) -> List[ast.comprehension]:
+        assert node.type in (syms.old_comp_for, syms.comp_for), repr(node)
         if node.children[0].type == token.ASYNC:
             is_async = 1
             children = node.children[1:]
