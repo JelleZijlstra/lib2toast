@@ -441,13 +441,8 @@ class Compiler(Visitor[ast.AST]):
                         bits.append(ast.literal_eval(leaf.value))
                     return ast.Constant(value=b"".join(bits), **get_line_range(node))
                 values.append(self._concatenate_joined_strings(last_value_bits))
-            if len(values) == 1:
-                if not contains_fstring:
-                    return values[0]
-                elif sys.version_info < (3, 12) and isinstance(values[0], ast.Constant):
-                    values[:] = [
-                        ast.Constant(value=values[0].value, **get_line_range(node))
-                    ]
+            if len(values) == 1 and not contains_fstring:
+                return values[0]
             return self._derange(
                 ast.JoinedStr(values=values, **get_line_range(node)), node
             )
@@ -559,7 +554,7 @@ class Compiler(Visitor[ast.AST]):
             )
             if last_value_bits:
                 values.append(self._concatenate_joined_strings(last_value_bits))
-            elif values and sys.version_info >= (3, 12):
+            elif values and sys.version_info >= (3, 12) and sys.version_info < (3, 13):
                 # there's always an empty Constant for some reason
                 prev_line_range = get_line_range(node.children[-2])
                 next_line_range = get_line_range(node.children[-1])
