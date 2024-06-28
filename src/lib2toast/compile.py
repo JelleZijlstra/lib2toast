@@ -1653,6 +1653,12 @@ class Compiler(Visitor[ast.AST]):
             return ast.Yield(value=None, **line_range)
         elif leaf.value == "raise":
             return ast.Raise(exc=None, cause=None, **line_range)
+        elif leaf.value == "None":
+            return ast.Constant(value=None, **line_range)
+        elif leaf.value == "True":
+            return ast.Constant(value=True, **line_range)
+        elif leaf.value == "False":
+            return ast.Constant(value=False, **line_range)
         return ast.Name(id=leaf.value, ctx=self.expr_context, **line_range)
 
     def visit_NUMBER(self, leaf: Leaf) -> ast.AST:

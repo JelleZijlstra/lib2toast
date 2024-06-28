@@ -537,3 +537,10 @@ def test_decorators() -> None:
 
 def test_empty() -> None:
     assert_compiles("")
+
+
+def test_constants() -> None:
+    assert_compiles("True")
+    assert_compiles("False")
+    assert_compiles("None")
+    assert_compiles("...")
