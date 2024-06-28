@@ -473,18 +473,28 @@ class Compiler(Visitor[ast.AST]):
             aliases.append(ast.alias(name=name, asname=asname, **get_line_range(child)))
         return aliases
 
+    def _resolve_dotted_name(self, node: NL) -> str:
+        if isinstance(node, Leaf):
+            assert node.type == token.NAME
+            return node.value
+        else:
+            name_pieces = []
+            for c in node.children:
+                assert isinstance(c, Leaf) and c.type in (token.NAME, token.DOT)
+                name_pieces.append(c.value)
+            return "".join(name_pieces)
+
     def visit_import_from(self, node: Node) -> ast.ImportFrom:
         consumer = _Consumer(node.children)
         consumer.expect(token.NAME)
         level = 0
         while consumer.consume(token.DOT) is not None:
             level += 1
-        name_node = consumer.expect(token.NAME)
-        assert isinstance(name_node, Leaf)
-        if name_node.value == "import":
+        name_node = consumer.expect()
+        if isinstance(name_node, Leaf) and name_node.value == "import":
             module = None
         else:
-            module = name_node.value
+            module = self._resolve_dotted_name(name_node)
             consumer.expect(token.NAME)
         if (star := consumer.consume(token.STAR)) is not None:
             aliases = [ast.alias(name="*", asname=None, **get_line_range(star))]
@@ -1496,24 +1506,12 @@ class Compiler(Visitor[ast.AST]):
         return self.compile_args(node.children[1])
 
     def compile_args(self, node: NL) -> ast.arguments:
-        if isinstance(node, Leaf) and node.type == token.NAME:
-            # single argument
-            return ast.arguments(
-                posonlyargs=[],
-                args=[
-                    ast.arg(
-                        arg=node.value,
-                        annotation=None,
-                        type_comment=None,
-                        **get_line_range(node),
-                    )
-                ],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                kwarg=None,
-                defaults=[],
-            )
+        if (isinstance(node, Leaf) and node.type == token.NAME) or (
+            isinstance(node, Node) and node.type in (syms.tname, syms.tname_star)
+        ):
+            children = [node]
+        else:
+            children = node.children
         posonlyargs: list[ast.arg] = []
         args: list[ast.arg] = []
         vararg = None
@@ -1523,7 +1521,7 @@ class Compiler(Visitor[ast.AST]):
         defaults: list[ast.expr] = []
         current_args = args
 
-        consumer = _Consumer(node.children)
+        consumer = _Consumer(children)
         while True:
             tok = consumer.consume()
             if tok is None:
@@ -1545,19 +1543,48 @@ class Compiler(Visitor[ast.AST]):
                         defaults.append(default)
                 elif current_args is kwonlyargs:
                     kw_defaults.append(None)
+            elif isinstance(tok, Node) and tok.type in (syms.tname, syms.tname_star):
+                assert (
+                    isinstance(tok.children[0], Leaf)
+                    and tok.children[0].type == token.NAME
+                )
+                annotation = self.visit_typed(tok.children[2], ast.expr)
+                current_args.append(
+                    ast.arg(
+                        arg=tok.children[0].value,
+                        annotation=annotation,
+                        type_comment=None,
+                        **get_line_range(tok),
+                    )
+                )
+                if consumer.consume(token.EQUAL) is not None:
+                    default = self.visit_typed(consumer.expect(), ast.expr)
+                    if current_args is kwonlyargs:
+                        kw_defaults.append(default)
+                    else:
+                        defaults.append(default)
+                elif current_args is kwonlyargs:
+                    kw_defaults.append(None)
             elif tok.type == token.SLASH:
                 posonlyargs = current_args
                 current_args = args = []
             elif tok.type == token.DOUBLESTAR:
                 if kwarg is not None:
                     raise UnsupportedSyntaxError("Multiple **kwargs")
-                name = consumer.expect(token.NAME)
-                assert isinstance(name, Leaf)
+                args_node = consumer.expect()
+                if isinstance(args_node, Leaf):
+                    name = args_node.value
+                    annotation = None
+                else:
+                    assert args_node.type == syms.tname
+                    assert isinstance(args_node.children[0], Leaf)
+                    name = args_node.children[0].value
+                    annotation = self.visit_typed(args_node.children[2], ast.expr)
                 kwarg = ast.arg(
-                    arg=name.value,
-                    annotation=None,
+                    arg=name,
+                    annotation=annotation,
                     type_comment=None,
-                    **get_line_range(name),
+                    **get_line_range(args_node),
                 )
             elif tok.type == token.STAR:
                 if node.children[consumer.index].type == token.COMMA:
@@ -1567,13 +1594,20 @@ class Compiler(Visitor[ast.AST]):
                     # *args
                     if vararg is not None:
                         raise UnsupportedSyntaxError("Multiple *args")
-                    name = consumer.expect(token.NAME)
-                    assert isinstance(name, Leaf)
+                    args_node = consumer.expect()
+                    if isinstance(args_node, Leaf):
+                        name = args_node.value
+                        annotation = None
+                    else:
+                        assert args_node.type == syms.tname_star
+                        assert isinstance(args_node.children[0], Leaf)
+                        name = args_node.children[0].value
+                        annotation = self.visit_typed(args_node.children[2], ast.expr)
                     vararg = ast.arg(
-                        arg=name.value,
-                        annotation=None,
+                        arg=name,
+                        annotation=annotation,
                         type_comment=None,
-                        **get_line_range(name),
+                        **get_line_range(args_node),
                     )
                 current_args = kwonlyargs
             else:

@@ -314,6 +314,7 @@ def test_import_from() -> None:
     assert_compiles("from .a import b")
     assert_compiles("from a import *")
     assert_compiles("from .a import *")
+    assert_compiles("from a.b import c")
 
 
 def test_if() -> None:
@@ -488,6 +489,14 @@ def test_function_def() -> None:
     assert_compiles("async def f(): pass")
     assert_compiles("async def f(a): pass")
     assert_compiles("async def f() -> str: pass")
+
+    assert_compiles("def f(x: int): pass")
+    assert_compiles("def f(x: int, y: str): pass")
+    assert_compiles("def f(x: int = 1): pass")
+    assert_compiles("def f(*, x: int) -> str: pass")
+    assert_compiles("def f(*, x: int = 1) -> str: pass")
+    assert_compiles("def f(*args: *Ts) -> str: pass")
+    assert_compiles("def f(**kwargs: int) -> str: pass")
 
     if sys.version_info >= (3, 12):
         assert_compiles("def f[T](): pass")
