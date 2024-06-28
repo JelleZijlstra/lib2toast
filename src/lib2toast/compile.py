@@ -6,7 +6,6 @@ import sys
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from token import ASYNC
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from blib2to3 import pygram
@@ -718,7 +717,7 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_async_stmt(self, node: Node) -> ast.AST:
         async_node = node.children[0]
-        assert isinstance(async_node, Leaf) and async_node.type == ASYNC
+        assert isinstance(async_node, Leaf) and async_node.type == token.ASYNC
         begin_line_range = get_line_range(async_node)
         child = self.visit(node.children[1])
         if isinstance(child, ast.With):
