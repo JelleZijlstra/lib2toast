@@ -174,6 +174,13 @@ def _string_prefix(leaf: Leaf) -> set[str]:
     return set(match.group().lower())
 
 
+def extract_name(node: NL) -> str:
+    if isinstance(node, Leaf) and node.type == token.NAME:
+        return node.value
+    else:
+        raise UnsupportedSyntaxError("Expected an identifier")
+
+
 TOKEN_TYPE_TO_BINOP = {
     token.PLUS: ast.Add,
     token.MINUS: ast.Sub,
@@ -235,10 +242,24 @@ class _Consumer:
         else:
             return None
 
+    def consume_name(self, name: str) -> Optional[Leaf]:
+        node = self.consume(token.NAME)
+        if node is not None and isinstance(node, Leaf) and node.value == name:
+            return node
+        else:
+            return None
+
     def expect(self, typ: Optional[int] = None) -> NL:
         node = self.consume(typ)
         if node is None:
             raise RuntimeError(f"Expected {typ}")
+        return node
+
+    def expect_name(self, name: str) -> Leaf:
+        node = self.expect(token.NAME)
+        assert isinstance(node, Leaf)
+        if node.value != name:
+            raise RuntimeError(f"Expected {name!r}")
         return node
 
     def done(self) -> bool:
@@ -274,18 +295,17 @@ class Compiler(Visitor[ast.AST]):
     if sys.version_info >= (3, 12):
 
         def visit_typevar(self, node: Node) -> ast.AST:
+            consumer = _Consumer(node.children)
+            name = extract_name(consumer.expect(token.NAME))
             bound = None
             default = None
-            for index in (1, 3):
-                if len(node.children) > index:
-                    punc = node.children[index]
-                    if punc.type == token.COLON:
-                        bound = self.visit(node.children[index + 1])
-                    elif punc.type == token.EQUAL:
-                        default = self.visit(node.children[index + 1])
+            if consumer.consume(token.COLON) is not None:
+                bound = self.visit_typed(consumer.expect(), ast.expr)
+            if consumer.consume(token.EQUAL) is not None:
+                default = self.visit_typed(consumer.expect(), ast.expr)
             if sys.version_info >= (3, 13):
                 return ast.TypeVar(
-                    name=node.children[0].value,
+                    name=name,
                     bound=bound,
                     default_value=default,
                     **get_line_range(node),
@@ -293,9 +313,7 @@ class Compiler(Visitor[ast.AST]):
             else:
                 if default is not None and sys.version_info < (3, 13):
                     raise UnsupportedSyntaxError("TypeVar default")
-                return ast.TypeVar(
-                    name=node.children[0].value, bound=bound, **get_line_range(node)
-                )
+                return ast.TypeVar(name=name, bound=bound, **get_line_range(node))
 
         def visit_paramspec(self, node: Node) -> ast.AST:
             if sys.version_info >= (3, 13):
@@ -310,7 +328,7 @@ class Compiler(Visitor[ast.AST]):
                 )
             else:
                 return ast.ParamSpec(
-                    name=node.children[1].value, **get_line_range(node)
+                    name=extract_name(node.children[1]), **get_line_range(node)
                 )
 
         def visit_typevartuple(self, node: Node) -> ast.TypeVarTuple:
@@ -326,7 +344,7 @@ class Compiler(Visitor[ast.AST]):
                 )
             else:
                 return ast.TypeVarTuple(
-                    name=node.children[1].value, **get_line_range(node)
+                    name=extract_name(node.children[1]), **get_line_range(node)
                 )
 
         def _make_type_param(self, node: NL) -> ast.type_param:
@@ -491,14 +509,12 @@ class Compiler(Visitor[ast.AST]):
         for child in children:
             if child.type in (syms.dotted_as_name, syms.import_as_name):
                 name_node, _, asname_node = child.children
-                assert isinstance(asname_node, Leaf) and asname_node.type == token.NAME
-                asname = asname_node.value
+                asname = extract_name(asname_node)
             else:
                 name_node = child
                 asname = None
             if isinstance(name_node, Leaf):
-                assert name_node.type == token.NAME
-                name = name_node.value
+                name = extract_name(name_node)
             else:
                 name_pieces = []
                 for c in name_node.children:
@@ -511,8 +527,7 @@ class Compiler(Visitor[ast.AST]):
 
     def _resolve_dotted_name(self, node: NL) -> str:
         if isinstance(node, Leaf):
-            assert node.type == token.NAME
-            return node.value
+            return extract_name(node)
         else:
             name_pieces = []
             for c in node.children:
@@ -522,7 +537,7 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_import_from(self, node: Node) -> ast.ImportFrom:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)
+        consumer.expect_name("from")
         level = 0
         while consumer.consume(token.DOT) is not None:
             level += 1
@@ -531,7 +546,7 @@ class Compiler(Visitor[ast.AST]):
             module = None
         else:
             module = self._resolve_dotted_name(name_node)
-            consumer.expect(token.NAME)
+            consumer.expect_name("import")
         if (star := consumer.consume(token.STAR)) is not None:
             aliases = [ast.alias(name="*", asname=None, **get_line_range(star))]
         else:
@@ -542,11 +557,8 @@ class Compiler(Visitor[ast.AST]):
         )
 
     def visit_type_stmt(self, node: Node) -> ast.AST:
-        assert (
-            isinstance(node.children[1], Leaf) and node.children[1].type == token.NAME
-        )
         name = ast.Name(
-            id=node.children[1].value,
+            id=extract_name(node.children[1]),
             ctx=ast.Store(),
             **get_line_range(node.children[1]),
         )
@@ -573,10 +585,8 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_funcdef(self, node: Node) -> ast.FunctionDef:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)
-        name_node = consumer.expect()
-        assert isinstance(name_node, Leaf) and name_node.type == token.NAME
-        name = name_node.value
+        consumer.expect_name("def")
+        name = extract_name(consumer.expect())
         if (type_params_node := consumer.consume(syms.typeparams)) is not None:
             type_params = self.compile_typeparams(type_params_node)
         else:
@@ -611,10 +621,8 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_classdef(self, node: Node) -> ast.ClassDef:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)  # class
-        name_node = consumer.expect()
-        assert isinstance(name_node, Leaf) and name_node.type == token.NAME
-        name = name_node.value
+        consumer.expect_name("class")
+        name = extract_name(consumer.expect())
         if (type_params_node := consumer.consume(syms.typeparams)) is not None:
             type_params = self.compile_typeparams(type_params_node)
         else:
@@ -651,7 +659,7 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_if_stmt(self, node: Node) -> ast.If:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)
+        consumer.expect_name("if")
         test = self.visit_typed(consumer.expect(), ast.expr)
         consumer.expect(token.COLON)
         suite, end_line_range = self.compile_suite(consumer.expect())
@@ -666,9 +674,9 @@ class Compiler(Visitor[ast.AST]):
     ) -> tuple[list[ast.stmt], Optional[LineRange]]:
         if consumer.done():
             return [], None
-        keyword = consumer.expect(token.NAME)
-        assert isinstance(keyword, Leaf) and keyword.value in ("elif", "else")
-        if keyword.value == "else":
+        keyword_node = consumer.expect(token.NAME)
+        keyword = extract_name(keyword_node)
+        if keyword == "else":
             consumer.expect(token.COLON)
             return self.compile_suite(consumer.expect())
         else:
@@ -678,7 +686,7 @@ class Compiler(Visitor[ast.AST]):
             orelse, maybe_line_range = self._compile_if_recursive(consumer)
             if maybe_line_range is not None:
                 end_line_range = maybe_line_range
-            line_range = unify_line_ranges(get_line_range(keyword), end_line_range)
+            line_range = unify_line_ranges(get_line_range(keyword_node), end_line_range)
             return [
                 ast.If(test=test, body=suite, orelse=orelse, **line_range)
             ], end_line_range
@@ -697,7 +705,7 @@ class Compiler(Visitor[ast.AST]):
 
         def compile_case_block(self, node: NL) -> tuple[ast.match_case, LineRange]:
             consumer = _Consumer(node.children)
-            consumer.expect(token.NAME)  # case
+            consumer.expect_name("case")
             pattern_node = consumer.expect()
             compiler = self.get_match_compiler()
             pattern = compiler.visit(pattern_node)
@@ -714,11 +722,11 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_while_stmt(self, node: Node) -> ast.While:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)
+        consumer.expect_name("while")
         test = self.visit_typed(consumer.expect(), ast.expr)
         consumer.expect(token.COLON)
         body, end_line_range = self.compile_suite(consumer.expect())
-        if consumer.consume(token.NAME) is not None:
+        if consumer.consume_name("else") is not None:
             consumer.expect(token.COLON)
             orelse, end_line_range = self.compile_suite(consumer.expect())
         else:
@@ -728,14 +736,14 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_for_stmt(self, node: Node) -> ast.For:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)  # for
+        consumer.expect_name("for")
         with self.set_expr_context(ast.Store()):
             target = self.visit_typed(consumer.expect(), ast.expr)
-        consumer.expect(token.NAME)  # in
+        consumer.expect_name("in")
         iter = self.visit_typed(consumer.expect(), ast.expr)
         consumer.expect(token.COLON)
         body, end_line_range = self.compile_suite(consumer.expect())
-        if consumer.consume(token.NAME) is not None:
+        if consumer.consume_name("else") is not None:
             consumer.expect(token.COLON)
             orelse, end_line_range = self.compile_suite(consumer.expect())
         else:
@@ -745,7 +753,7 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_with_stmt(self, node: Node) -> ast.With:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)  # with
+        consumer.expect_name("with")
         with_items = []
         while True:
             with_item_node = consumer.expect()
@@ -823,7 +831,7 @@ class Compiler(Visitor[ast.AST]):
         self, node: Node, outer_consumer: _Consumer
     ) -> tuple[ast.excepthandler, LineRange, bool]:
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)  # except
+        consumer.expect_name("except")
         if consumer.consume(token.STAR) is not None:
             is_try_star = True
         else:
@@ -832,7 +840,7 @@ class Compiler(Visitor[ast.AST]):
             typ = self.visit_typed(type_node, ast.expr)
         else:
             typ = None
-        if consumer.consume():  # as or comma
+        if consumer.consume():  # "as" or comma
             with self.set_expr_context(ast.Store()):
                 name_tree = self.visit_typed(consumer.expect(), ast.expr)
             if not isinstance(name_tree, ast.Name):
@@ -853,7 +861,7 @@ class Compiler(Visitor[ast.AST]):
     def visit_try_stmt(self, node: Node) -> ast.stmt:
         is_try_star = False
         consumer = _Consumer(node.children)
-        consumer.expect(token.NAME)  # try
+        consumer.expect_name("try")
         consumer.expect(token.COLON)
         body, end_line_range = self.compile_suite(consumer.expect())
         handlers = []
@@ -1283,19 +1291,11 @@ class Compiler(Visitor[ast.AST]):
         )
 
     def visit_and_test(self, node: Node) -> ast.AST:
-        operands = []
-        for child in node.children[::2]:
-            operand = self.visit(child)
-            assert isinstance(operand, ast.expr)
-            operands.append(operand)
+        operands = [self.visit_typed(child, ast.expr) for child in node.children[::2]]
         return ast.BoolOp(op=ast.And(), values=operands, **get_line_range(node))
 
     def visit_or_test(self, node: Node) -> ast.AST:
-        operands = []
-        for child in node.children[::2]:
-            operand = self.visit(child)
-            assert isinstance(operand, ast.expr)
-            operands.append(operand)
+        operands = [self.visit_typed(child, ast.expr) for child in node.children[::2]]
         return ast.BoolOp(op=ast.Or(), values=operands, **get_line_range(node))
 
     def visit_test(self, node: Node) -> ast.AST:
@@ -1404,9 +1404,7 @@ class Compiler(Visitor[ast.AST]):
         keywords: list[ast.keyword] = []
         for argument in arguments:
             if isinstance(argument, Leaf) or argument.type != syms.argument:
-                arg = self.visit(argument)
-                assert isinstance(arg, ast.expr)
-                args.append(arg)
+                args.append(self.visit_typed(argument, ast.expr))
             elif argument.children[0].type == token.STAR:
                 args.append(
                     ast.Starred(
@@ -1423,10 +1421,6 @@ class Compiler(Visitor[ast.AST]):
                         **get_line_range(argument),
                     )
                 )
-            elif len(argument.children) == 1:
-                expr = self.visit(argument.children[0])
-                assert isinstance(expr, ast.expr)
-                args.append(expr)
             elif len(argument.children) == 2:
                 inner = self.visit_typed(argument.children[0], ast.expr)
                 comps = self._compile_comprehension(argument.children[1])
@@ -1488,10 +1482,8 @@ class Compiler(Visitor[ast.AST]):
     def _compile_comp_iter(
         self, node: Node
     ) -> tuple[list[ast.expr], list[ast.comprehension]]:
-        assert (
-            isinstance(node.children[0], Leaf) and node.children[0].type == token.NAME
-        )
-        if node.children[0].value == "if":
+        keyword = extract_name(node.children[0])
+        if keyword == "if":
             test = self.visit(node.children[1])
             assert isinstance(test, ast.expr)
             if len(node.children) > 2:
@@ -1607,14 +1599,11 @@ class Compiler(Visitor[ast.AST]):
                 elif current_args is kwonlyargs:
                     kw_defaults.append(None)
             elif isinstance(tok, Node) and tok.type in (syms.tname, syms.tname_star):
-                assert (
-                    isinstance(tok.children[0], Leaf)
-                    and tok.children[0].type == token.NAME
-                )
+                arg_name = extract_name(tok.children[0])
                 annotation = self.visit_typed(tok.children[2], ast.expr)
                 current_args.append(
                     ast.arg(
-                        arg=tok.children[0].value,
+                        arg=arg_name,
                         annotation=annotation,
                         type_comment=None,
                         **get_line_range(tok),
@@ -1761,10 +1750,8 @@ if sys.version_info >= (3, 10):
 
         def visit_pattern(self, node: Node) -> ast.pattern:
             pattern = self.visit_typed(node.children[0], ast.pattern)
-            name = node.children[2]
-            if not isinstance(name, Leaf) or name.type != token.NAME:
-                raise UnsupportedSyntaxError("pattern matching with as")
-            return ast.MatchAs(pattern=pattern, name=name.value, **get_line_range(node))
+            name = extract_name(node.children[2])
+            return ast.MatchAs(pattern=pattern, name=name, **get_line_range(node))
 
         def visit_patterns(self, node: Node) -> ast.pattern:
             patterns = [
@@ -1794,10 +1781,9 @@ if sys.version_info >= (3, 10):
             return ast.MatchOr(patterns=patterns, **get_line_range(node))
 
         def visit_star_expr(self, node: Node) -> ast.pattern:
-            child = node.children[1]
-            if not isinstance(child, Leaf) or child.type != token.NAME:
-                raise UnsupportedSyntaxError("starred expression in pattern matching")
-            name = None if child.value == "_" else child.value
+            name = extract_name(node.children[1])
+            if name == "_":
+                return ast.MatchStar(name=None, **get_line_range(node))
             return ast.MatchStar(name=name, **get_line_range(node))
 
         def visit_atom(self, node: Node) -> ast.pattern:
@@ -1840,9 +1826,7 @@ if sys.version_info >= (3, 10):
                 rest = None
                 while not consumer.done():
                     if consumer.consume(token.DOUBLESTAR) is not None:
-                        expr = consumer.expect(token.NAME)
-                        assert isinstance(expr, Leaf)
-                        rest = expr.value
+                        rest = extract_name(consumer.expect(token.NAME))
                     elif consumer.consume(syms.star_expr):
                         raise UnsupportedSyntaxError(
                             "starred expression in pattern matching"
@@ -1938,15 +1922,8 @@ if sys.version_info >= (3, 10):
                             "named expression in pattern matching"
                         )
                     elif argument.children[1].type == token.EQUAL:
-                        name_node = argument.children[0]
-                        if (
-                            not isinstance(name_node, Leaf)
-                            or name_node.type != token.NAME
-                        ):
-                            raise UnsupportedSyntaxError(
-                                "keyword argument target must be a name"
-                            )
-                        kwd_attrs.append(name_node.value)
+                        name = extract_name(argument.children[0])
+                        kwd_attrs.append(name)
                         value = self.visit_typed(argument.children[2], ast.pattern)
                         kwd_patterns.append(value)
                     else:
