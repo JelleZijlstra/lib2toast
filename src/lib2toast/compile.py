@@ -917,7 +917,7 @@ class Compiler(Visitor[ast.AST]):
                 elif star_expr := consumer.consume(syms.star_expr):
                     elts.append(
                         ast.Starred(
-                            value=self.visit_typed(consumer.expect(), ast.expr),
+                            value=self.visit_typed(star_expr.children[1], ast.expr),
                             ctx=self.expr_context,
                             **get_line_range(star_expr),
                         )

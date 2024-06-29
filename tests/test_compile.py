@@ -559,3 +559,12 @@ def test_constants() -> None:
     assert_compiles("False")
     assert_compiles("None")
     assert_compiles("...")
+
+
+def test_starred() -> None:
+    assert_compiles("a, *b = c")
+    assert_compiles("*a, b = c")
+    assert_compiles("a = (*b,)")
+    assert_compiles("a = (*b, *c)")
+    assert_compiles("a = [*b]")
+    assert_compiles("a = {x, *c}")
