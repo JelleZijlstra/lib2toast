@@ -1227,7 +1227,7 @@ class Compiler(Visitor[ast.AST]):
         )
         return ast.Constant(value="".join(strings), **line_range)
 
-    def visit_expr(self, node: Node) -> ast.AST:
+    def visit_expr(self, node: Node) -> ast.expr:
         op = self.visit_typed(node.children[0], ast.expr)
         begin_range = get_line_range(node.children[0])
         for child_index in range(2, len(node.children), 2):
@@ -1310,14 +1310,14 @@ class Compiler(Visitor[ast.AST]):
             **get_line_range(node),
         )
 
-    def visit_factor(self, node: Node) -> ast.AST:
+    def visit_factor(self, node: Node) -> ast.UnaryOp:
         return ast.UnaryOp(
             op=TOKEN_TYPE_TO_UNARY_OP[node.children[0].type](),
             operand=self.visit_typed(node.children[1], ast.expr),
             **get_line_range(node),
         )
 
-    def visit_power(self, node: Node) -> ast.AST:
+    def visit_power(self, node: Node) -> ast.expr:
         children = node.children
         if len(children) > 2 and node.children[-2].type == token.DOUBLESTAR:
             operand = self.visit_typed(children[-1], ast.expr)
@@ -1785,6 +1785,18 @@ if sys.version_info >= (3, 10):
             if name == "_":
                 return ast.MatchStar(name=None, **get_line_range(node))
             return ast.MatchStar(name=name, **get_line_range(node))
+
+        def visit_term(self, node: Node) -> ast.pattern:
+            expr = self.compiler.visit_term(node)
+            return ast.MatchValue(value=expr, **get_line_range(node))
+
+        visit_xor_expr = visit_and_expr = visit_shift_expr = visit_arith_expr = (
+            visit_term
+        )
+
+        def visit_factor(self, node: Node) -> ast.pattern:
+            factor = self.compiler.visit_factor(node)
+            return ast.MatchValue(value=factor, **get_line_range(node))
 
         def visit_atom(self, node: Node) -> ast.pattern:
             if node.children[0].type == token.LPAR:

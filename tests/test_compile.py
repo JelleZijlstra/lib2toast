@@ -788,3 +788,17 @@ if sys.version_info >= (3, 10):
                     pass
             """
         )
+        assert_compiles(
+            """
+            match a:
+                case -1:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case 1+2j:
+                    pass
+            """
+        )
