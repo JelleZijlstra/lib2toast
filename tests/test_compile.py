@@ -13,6 +13,8 @@ def test_literal() -> None:
     assert_compiles('"hello"')
     assert_compiles('"""hello"""')
     assert_compiles('r"hello"')
+    assert_compiles('"é"')
+    assert_compiles('" "')  # non-breaking space
 
 
 def test_arithmetic() -> None:

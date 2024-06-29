@@ -63,11 +63,12 @@ class LineRange(TypedDict):
 
 
 def get_line_range_for_leaf(leaf: Leaf) -> LineRange:
-    num_newlines = leaf.value.count("\n")
+    raw_text = leaf.value.encode("utf-8")
+    num_newlines = raw_text.count(b"\n")
     if num_newlines == 0:
-        end_col_offset = leaf.column + len(leaf.value)
+        end_col_offset = leaf.column + len(raw_text)
     else:
-        end_col_offset = len(leaf.value) - leaf.value.rfind("\n") - 1
+        end_col_offset = len(raw_text) - raw_text.rfind(b"\n") - 1
     return LineRange(
         lineno=leaf.lineno,
         col_offset=leaf.column,
@@ -1098,13 +1099,14 @@ class Compiler(Visitor[ast.AST]):
             next_node = node.children[consumer.index]
             if next_node.prefix:
                 text += next_node.prefix
-                line_range["end_lineno"] += next_node.prefix.count("\n")
-                if "\n" in next_node.prefix:
+                raw_prefix = next_node.prefix.encode("utf-8")
+                line_range["end_lineno"] += raw_prefix.count(b"\n")
+                if b"\n" in raw_prefix:
                     line_range["end_col_offset"] = (
-                        len(next_node.prefix) - next_node.prefix.rfind("\n") - 1
+                        len(raw_prefix) - raw_prefix.rfind(b"\n") - 1
                     )
                 else:
-                    line_range["end_col_offset"] += len(next_node.prefix)
+                    line_range["end_col_offset"] += len(raw_prefix)
             self_doc = ast.Constant(value=text, **line_range)
         if consumer.consume(token.BANG) is not None:
             specifier = consumer.expect(token.NAME)
