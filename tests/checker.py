@@ -12,8 +12,8 @@ from lib2toast.compile import compile
 
 def assert_compiles(code: str) -> None:
     code = textwrap.dedent(code)
-    our_code = compile(code)
     ast_code = ast.parse(code)
+    our_code = compile(code)
     if ast.dump(our_code, include_attributes=True, indent=2) != ast.dump(
         ast_code, include_attributes=True, indent=2
     ):

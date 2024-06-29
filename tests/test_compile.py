@@ -579,3 +579,212 @@ def test_starred() -> None:
     assert_compiles("a = (*b, *c)")
     assert_compiles("a = [*b]")
     assert_compiles("a = {x, *c}")
+
+
+if sys.version_info >= (3, 10):
+
+    def test_match() -> None:
+        assert_compiles(
+            """
+            match a:
+                case b:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case (b):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case "x":
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case 1:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case "x" "y":
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case b if c:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case b as c:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case _:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case _ as b:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case b, c:
+                    pass
+            """
+        )
+
+    def test_match_sequence() -> None:
+        assert_compiles(
+            """
+            match a:
+                case (b, c):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case (b, c, *d):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case (b, c, *_):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case ():
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case []:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case [b]:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case [b, *c]:
+                    pass
+            """
+        )
+
+    def test_match_mapping() -> None:
+        assert_compiles(
+            """
+            match a:
+                case {"b": c}:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case {}:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case {"b": c, **d}:
+                    pass
+            """
+        )
+
+    def test_match_or() -> None:
+        assert_compiles(
+            """
+            match a:
+                case b | c:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case b | c | d:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case b | c | [a, b]:
+                    pass
+            """
+        )
+
+    def test_match_class() -> None:
+        assert_compiles(
+            """
+            match a:
+                case int():
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case int(x):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case int(x, y):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case int(x, y, z=3):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case int(42, z=5):
+                    pass
+            """
+        )

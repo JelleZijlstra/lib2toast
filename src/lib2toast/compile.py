@@ -19,6 +19,7 @@ pygram.initialize(cache_dir=None)
 syms = pygram.python_symbols
 
 T = TypeVar("T")
+U = TypeVar("U")
 
 LVB = Union[Leaf, ast.Constant, tuple[Leaf, Leaf]]
 
@@ -53,6 +54,12 @@ class Visitor(Generic[T]):
 
     def generic_visit(self, node: NL) -> T:
         raise NotImplementedError(f"visit_{self.get_node_name(node)}")
+
+    def visit_typed(self, node: NL, typ: type[U]) -> U:
+        result = self.visit(node)
+        if not isinstance(result, typ):
+            raise TypeError(f"Expected {typ}, got {result}")
+        return result
 
 
 class LineRange(TypedDict):
@@ -161,6 +168,12 @@ def empty_arguments() -> ast.arguments:
     )
 
 
+def _string_prefix(leaf: Leaf) -> set[str]:
+    match = re.match(r"^[A-Za-z]*", leaf.value)
+    assert match, repr(leaf)
+    return set(match.group().lower())
+
+
 TOKEN_TYPE_TO_BINOP = {
     token.PLUS: ast.Add,
     token.MINUS: ast.Sub,
@@ -235,11 +248,17 @@ class _Consumer:
 class Compiler(Visitor[ast.AST]):
     expr_context: ast.expr_context = ast.Load()
 
-    def visit_typed(self, node: NL, typ: type[T]) -> T:
-        result = self.visit(node)
-        if not isinstance(result, typ):
-            raise TypeError(f"Expected {typ}, got {result}")
-        return result
+    if sys.version_info >= (3, 10):
+        _match_compiler: Optional["MatchCompiler"] = None
+
+        def get_match_compiler(self) -> "MatchCompiler":
+            if self._match_compiler is None:
+                self._match_compiler = MatchCompiler(
+                    token_type_to_name=self.token_type_to_name,
+                    node_type_to_name=self.node_type_to_name,
+                    compiler=self,
+                )
+            return self._match_compiler
 
     @contextmanager
     def set_expr_context(
@@ -664,6 +683,35 @@ class Compiler(Visitor[ast.AST]):
                 ast.If(test=test, body=suite, orelse=orelse, **line_range)
             ], end_line_range
 
+    if sys.version_info >= (3, 10):
+
+        def visit_match_stmt(self, node: Node) -> ast.Match:
+            subject = self.visit_typed(node.children[1], ast.expr)
+            case_nodes = node.children[5:-1]
+            results = [self.compile_case_block(case_node) for case_node in case_nodes]
+            cases = [case for case, _ in results]
+            line_range = unify_line_ranges(
+                get_line_range(node.children[0]), results[-1][1]
+            )
+            return ast.Match(subject=subject, cases=cases, **line_range)
+
+        def compile_case_block(self, node: NL) -> tuple[ast.match_case, LineRange]:
+            consumer = _Consumer(node.children)
+            consumer.expect(token.NAME)  # case
+            pattern_node = consumer.expect()
+            compiler = self.get_match_compiler()
+            pattern = compiler.visit(pattern_node)
+            if (guard_node := consumer.consume(syms.guard)) is not None:
+                guard = self.visit_typed(guard_node.children[1], ast.expr)
+            else:
+                guard = None
+            consumer.expect(token.COLON)
+            suite, end_line_range = self.compile_suite(consumer.expect())
+            return (
+                ast.match_case(pattern=pattern, guard=guard, body=suite),
+                end_line_range,
+            )
+
     def visit_while_stmt(self, node: Node) -> ast.While:
         consumer = _Consumer(node.children)
         consumer.expect(token.NAME)
@@ -998,7 +1046,7 @@ class Compiler(Visitor[ast.AST]):
             is_bytestring = False
             for child in node.children:
                 if isinstance(child, Leaf) and child.type == token.STRING:
-                    if "b" in self._string_prefix(child):
+                    if "b" in _string_prefix(child):
                         is_bytestring = True
                     last_value_bits.append(child)
                 elif isinstance(child, Node) and child.type == syms.fstring:
@@ -1023,11 +1071,6 @@ class Compiler(Visitor[ast.AST]):
             return self._derange(
                 ast.JoinedStr(values=values, **get_line_range(node)), node
             )
-
-    def _string_prefix(self, leaf: Leaf) -> set[str]:
-        match = re.match(r"^[A-Za-z]*", leaf.value)
-        assert match, repr(leaf)
-        return set(match.group().lower())
 
     def visit_fstring(self, node: Node) -> ast.expr:
         values, last_value_bits = self._compile_fstring_innards(node.children, [], None)
@@ -1690,6 +1733,231 @@ class Compiler(Visitor[ast.AST]):
     def visit_ENDMARKER(self, _leaf: Leaf) -> ast.AST:
         # empty module
         return ast.Module(body=[], type_ignores=[])
+
+
+if sys.version_info >= (3, 10):
+
+    @dataclass(kw_only=True)
+    class MatchCompiler(Visitor[ast.pattern]):
+        compiler: Compiler
+
+        def visit_NAME(self, leaf: Leaf) -> ast.pattern:
+            if leaf.value == "_":
+                return ast.MatchAs(pattern=None, name=None, **get_line_range(leaf))
+            elif leaf.value == "None":
+                return ast.MatchSingleton(value=None, **get_line_range(leaf))
+            elif leaf.value == "True":
+                return ast.MatchSingleton(value=True, **get_line_range(leaf))
+            elif leaf.value == "False":
+                return ast.MatchSingleton(value=False, **get_line_range(leaf))
+            return ast.MatchAs(pattern=None, name=leaf.value, **get_line_range(leaf))
+
+        def visit_STRING(self, leaf: Leaf) -> ast.pattern:
+            value = ast.literal_eval(leaf.value)
+            expr = ast.Constant(value=value, **get_line_range(leaf))
+            return ast.MatchValue(value=expr, **get_line_range(leaf))
+
+        visit_NUMBER = visit_STRING
+
+        def visit_pattern(self, node: Node) -> ast.pattern:
+            pattern = self.visit_typed(node.children[0], ast.pattern)
+            name = node.children[2]
+            if not isinstance(name, Leaf) or name.type != token.NAME:
+                raise UnsupportedSyntaxError("pattern matching with as")
+            return ast.MatchAs(pattern=pattern, name=name.value, **get_line_range(node))
+
+        def visit_patterns(self, node: Node) -> ast.pattern:
+            patterns = [
+                self.visit_typed(child, ast.pattern) for child in node.children[::2]
+            ]
+            return ast.MatchSequence(patterns=patterns, **get_line_range(node))
+
+        def visit_testlist_gexp(
+            self, node: Node, parent_node: Optional[Node] = None
+        ) -> ast.MatchSequence:
+            if parent_node is None:
+                parent_node = node
+            if node.children[1].type == syms.old_comp_for:
+                raise UnsupportedSyntaxError("comprehension in pattern matching")
+            elts = [
+                self.visit_typed(child, ast.pattern) for child in node.children[::2]
+            ]
+            return ast.MatchSequence(patterns=elts, **get_line_range(parent_node))
+
+        def visit_expr(self, node: Node) -> ast.AST:
+            for operator in node.children[1::2]:
+                if operator.type != token.VBAR:
+                    raise UnsupportedSyntaxError("operator in pattern matching")
+            patterns = [
+                self.visit_typed(child, ast.pattern) for child in node.children[::2]
+            ]
+            return ast.MatchOr(patterns=patterns, **get_line_range(node))
+
+        def visit_star_expr(self, node: Node) -> ast.pattern:
+            child = node.children[1]
+            if not isinstance(child, Leaf) or child.type != token.NAME:
+                raise UnsupportedSyntaxError("starred expression in pattern matching")
+            name = None if child.value == "_" else child.value
+            return ast.MatchStar(name=name, **get_line_range(node))
+
+        def visit_atom(self, node: Node) -> ast.pattern:
+            if node.children[0].type == token.LPAR:
+                if len(node.children) == 2:
+                    return ast.MatchSequence(patterns=[], **get_line_range(node))
+                # tuples, parenthesized expressions
+                middle = node.children[1]
+                if isinstance(middle, Node) and middle.type == syms.testlist_gexp:
+                    return self.visit_testlist_gexp(middle, node)
+                return self.visit(middle)
+            elif node.children[0].type == token.LSQB:
+                if len(node.children) == 2:
+                    return ast.MatchSequence(patterns=[], **get_line_range(node))
+                # lists
+                inner = node.children[1]
+                if inner.type != syms.listmaker:
+                    return ast.MatchSequence(
+                        patterns=[self.visit_typed(inner, ast.pattern)],
+                        **get_line_range(node),
+                    )
+                if inner.children[1].type == syms.old_comp_for:
+                    raise UnsupportedSyntaxError("comprehension in pattern matching")
+                elts = [
+                    self.visit_typed(child, ast.pattern)
+                    for child in inner.children[::2]
+                ]
+                return ast.MatchSequence(patterns=elts, **get_line_range(node))
+            elif node.children[0].type == token.LBRACE:
+                if len(node.children) == 2:
+                    return ast.MatchMapping(
+                        keys=[], patterns=[], rest=None, **get_line_range(node)
+                    )
+                inner = node.children[1]
+                if inner.type != syms.dictsetmaker:
+                    raise UnsupportedSyntaxError("set in pattern matching")
+                consumer = _Consumer(inner.children)
+                keys = []
+                patterns = []
+                rest = None
+                while not consumer.done():
+                    if consumer.consume(token.DOUBLESTAR) is not None:
+                        expr = consumer.expect(token.NAME)
+                        assert isinstance(expr, Leaf)
+                        rest = expr.value
+                    elif consumer.consume(syms.star_expr):
+                        raise UnsupportedSyntaxError(
+                            "starred expression in pattern matching"
+                        )
+                    else:
+                        key_node = consumer.expect()
+                        if consumer.consume(token.COLONEQUAL) is not None:
+                            raise UnsupportedSyntaxError(
+                                "named expression in pattern matching"
+                            )
+                        elif consumer.consume(token.COLON) is not None:
+                            key = self.compiler.visit_typed(key_node, ast.expr)
+                            pattern = self.visit_typed(consumer.expect(), ast.pattern)
+                            keys.append(key)
+                            patterns.append(pattern)
+                        else:
+                            raise UnsupportedSyntaxError("set in pattern matching")
+                        if consumer.consume(syms.comp_for):
+                            raise UnsupportedSyntaxError(
+                                "comprehension in pattern matching"
+                            )
+                    if not consumer.done():
+                        consumer.expect(token.COMMA)
+                return ast.MatchMapping(
+                    keys=keys, patterns=patterns, rest=rest, **get_line_range(node)
+                )
+            elif node.children[0].type == token.DOT:
+                # ellipsis
+                raise UnsupportedSyntaxError("ellipsis in pattern matching")
+            elif node.children[0].type == token.BACKQUOTE:
+                raise UnsupportedSyntaxError("repr in pattern matching")
+            else:
+                # concatenated strings
+                strings: list[Leaf] = []
+                for child in node.children:
+                    if isinstance(child, Leaf) and child.type == token.STRING:
+                        strings.append(child)
+                    else:
+                        raise UnsupportedSyntaxError("f-string in pattern matching")
+                string = self._concatenate_joined_strings(strings)
+                return ast.MatchValue(value=string, **get_line_range(node))
+
+        def _concatenate_joined_strings(self, nodes: Sequence[Leaf]) -> ast.Constant:
+            strings = []
+            for node in nodes:
+                if node.type == token.STRING:
+                    strings.append(ast.literal_eval(node.value))
+                else:
+                    raise RuntimeError(f"Unexpected node: {node!r}")
+            line_range = unify_line_ranges(
+                get_line_range_for_leaf(nodes[0]), get_line_range_for_leaf(nodes[-1])
+            )
+            return ast.Constant(value=strings[0][:0].join(strings), **line_range)
+
+        def visit_power(self, node: Node) -> ast.MatchClass:
+            children = node.children
+            if len(children) > 2 and node.children[-2].type == token.DOUBLESTAR:
+                raise UnsupportedSyntaxError("power in pattern matching")
+            if children[0].type == token.AWAIT:
+                raise UnsupportedSyntaxError("await in pattern matching")
+            cls = self.compiler.visit_typed(children[0], ast.expr)
+            if len(children) != 2:
+                raise UnsupportedSyntaxError("trailer in pattern matching")
+            trailer = children[1]
+            if trailer.children[0].type != token.LPAR:  # call
+                raise UnsupportedSyntaxError("trailer in pattern matching")
+            patterns: list[ast.pattern] = []
+            kwd_attrs: list[str] = []
+            kwd_patterns: list[ast.pattern] = []
+            if len(trailer.children) > 2:
+                arglist = trailer.children[1]
+                if not isinstance(arglist, Node) or arglist.type != syms.arglist:
+                    arguments = [arglist]
+                else:
+                    arguments = arglist.children[::2]
+                for argument in arguments:
+                    if isinstance(argument, Leaf) or argument.type != syms.argument:
+                        patterns.append(self.visit_typed(argument, ast.pattern))
+                    elif argument.children[0].type == token.STAR:
+                        raise UnsupportedSyntaxError(
+                            "starred expression in pattern matching"
+                        )
+                    elif argument.children[0].type == token.DOUBLESTAR:
+                        raise UnsupportedSyntaxError(
+                            "double-starred expression in pattern matching"
+                        )
+                    elif len(argument.children) == 2:
+                        raise UnsupportedSyntaxError(
+                            "comprehension in pattern matching"
+                        )
+                    elif argument.children[1].type == token.COLONEQUAL:
+                        raise UnsupportedSyntaxError(
+                            "named expression in pattern matching"
+                        )
+                    elif argument.children[1].type == token.EQUAL:
+                        name_node = argument.children[0]
+                        if (
+                            not isinstance(name_node, Leaf)
+                            or name_node.type != token.NAME
+                        ):
+                            raise UnsupportedSyntaxError(
+                                "keyword argument target must be a name"
+                            )
+                        kwd_attrs.append(name_node.value)
+                        value = self.visit_typed(argument.children[2], ast.pattern)
+                        kwd_patterns.append(value)
+                    else:
+                        raise NotImplementedError(repr(argument))
+            return ast.MatchClass(
+                cls=cls,
+                patterns=patterns,
+                kwd_attrs=kwd_attrs,
+                kwd_patterns=kwd_patterns,
+                **get_line_range(node),
+            )
 
 
 def compile(code: str) -> ast.AST:

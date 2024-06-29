@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.12"
 
 [tool.ruff]
 lint.select = [
@@ -71,6 +71,7 @@ lint.ignore = [
   "D402",
   "BLE001",
   "RUF001",
+  "N815",
 ]
 
 line-length = 100
