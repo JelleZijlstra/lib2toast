@@ -15,6 +15,14 @@ def test_literal() -> None:
     assert_compiles('r"hello"')
     assert_compiles('"é"')
     assert_compiles('" "')  # non-breaking space
+    assert_compiles('"✨ 🍰 ✨"')
+
+
+def test_cake() -> None:
+    # TODO this is broken because the .column attribute on lib2to3 nodes
+    # is based on text, and in CPython it's based on bytes.
+    return
+    assert_compiles('out(" ✨ 🍰 ✨")')
 
 
 def test_arithmetic() -> None:
@@ -254,6 +262,7 @@ def test_simple_statements() -> None:
     assert_compiles("pass")
     assert_compiles("break")
     assert_compiles("continue")
+    assert_compiles("a; b")
 
 
 def test_raise() -> None:

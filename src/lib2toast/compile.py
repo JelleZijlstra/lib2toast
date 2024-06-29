@@ -329,20 +329,33 @@ class Compiler(Visitor[ast.AST]):
         def compile_typeparams(self, node: NL) -> list[ast.expr]:
             raise UnsupportedSyntaxError(f"Type parameters: {node!r}")
 
+    def compile_statement_list(self, nodes: Sequence[NL]) -> list[ast.stmt]:
+        statements = []
+        for node in nodes:
+            if node.type in (token.ENDMARKER, token.NEWLINE):
+                continue
+            if isinstance(node, Node) and node.type == syms.simple_stmt:
+                statements += self.compile_simple_stmt(node)
+            else:
+                statements.append(self.visit_typed(node, ast.stmt))
+        return statements
+
     def visit_file_input(self, node: Node) -> ast.AST:
         return ast.Module(
-            # skip ENDMARKER
-            body=[self.visit_typed(child, ast.stmt) for child in node.children[:-1]],
-            type_ignores=[],  # TODO
+            body=self.compile_statement_list(node.children), type_ignores=[]  # TODO
         )
 
     # Statements
-    def visit_simple_stmt(self, node: Node) -> ast.AST:
-        val = self.visit(node.children[0])
-        if isinstance(val, ast.expr):
-            return ast.Expr(val, **get_line_range(node.children[0]))
-        else:
-            return val
+    def compile_simple_stmt(self, node: Node) -> list[ast.stmt]:
+        statements: list[ast.stmt] = []
+        for child in node.children[::2]:
+            val = self.visit(child)
+            if isinstance(val, ast.expr):
+                statements.append(ast.Expr(val, **get_line_range(child)))
+            else:
+                assert isinstance(val, ast.stmt)
+                statements.append(val)
+        return statements
 
     def visit_expr_stmt(self, node: Node) -> ast.AST:
         consumer = _Consumer(node.children)
@@ -533,14 +546,11 @@ class Compiler(Visitor[ast.AST]):
     # Compound statements
     def compile_suite(self, node: NL) -> tuple[list[ast.stmt], LineRange]:
         if isinstance(node, Node) and node.type == syms.suite:
-            statements = [
-                self.visit_typed(child, ast.stmt) for child in node.children[2:-1]
-            ]
+            statements = self.compile_statement_list(node.children[2:-1])
             return statements, get_line_range_for_ast(statements[-1])
         else:
-            return [self.visit_typed(node, ast.stmt)], get_line_range(
-                node, ignore_last_leaf=True
-            )
+            statements = self.compile_statement_list([node])
+            return statements, get_line_range(node, ignore_last_leaf=True)
 
     def visit_funcdef(self, node: Node) -> ast.FunctionDef:
         consumer = _Consumer(node.children)
