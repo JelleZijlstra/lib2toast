@@ -4,7 +4,7 @@ from pathlib import Path
 import lib2toast
 import pytest
 
-from .test_compile import assert_compiles
+from .checker import assert_compiles
 
 
 def generate_test_cases() -> Iterable[Path]:

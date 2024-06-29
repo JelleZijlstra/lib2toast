@@ -1,17 +1,6 @@
-import ast
 import sys
-import textwrap
 
-from lib2toast.compile import compile
-
-
-def assert_compiles(code: str) -> None:
-    code = textwrap.dedent(code)
-    our_code = compile(code)
-    ast_code = ast.parse(code)
-    assert ast.dump(our_code, include_attributes=True, indent=2) == ast.dump(
-        ast_code, include_attributes=True, indent=2
-    )
+from .checker import assert_compiles
 
 
 def test_name() -> None:
@@ -223,6 +212,8 @@ def test_assignment() -> None:
     assert_compiles("a, b = c, d")
     assert_compiles("a.b = c")
     assert_compiles("a[b] = c[d] = e")
+    assert_compiles("self.a[b] = c")
+    assert_compiles("a[b].c = d")
 
     assert_compiles("a: int")
     assert_compiles("a: int = b")

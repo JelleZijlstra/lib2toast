@@ -1296,6 +1296,10 @@ class Compiler(Visitor[ast.AST]):
         begin_range = get_line_range(children[0])
         for trailer in trailers:
             assert isinstance(trailer, Node)
+            if trailer is trailers[-1]:
+                ctx = self.expr_context
+            else:
+                ctx = ast.Load()
             if trailer.children[0].type == token.LPAR:  # call
                 if len(trailer.children) == 2:
                     args: list[ast.expr] = []
@@ -1316,9 +1320,7 @@ class Compiler(Visitor[ast.AST]):
                 )
                 with self.set_expr_context(ast.Load()):
                     subscript = self.visit_typed(trailer.children[1], ast.expr)
-                atom = ast.Subscript(
-                    value=atom, slice=subscript, ctx=self.expr_context, **line_range
-                )
+                atom = ast.Subscript(value=atom, slice=subscript, ctx=ctx, **line_range)
             elif trailer.children[0].type == token.DOT:  # attribute
                 assert (
                     isinstance(trailer.children[1], Leaf)
@@ -1327,7 +1329,7 @@ class Compiler(Visitor[ast.AST]):
                 atom = ast.Attribute(
                     value=atom,
                     attr=trailer.children[1].value,
-                    ctx=self.expr_context,
+                    ctx=ctx,
                     **unify_line_ranges(
                         begin_range, get_line_range(trailer.children[1])
                     ),
