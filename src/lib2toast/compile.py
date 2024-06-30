@@ -361,7 +361,7 @@ class Compiler(Visitor[ast.AST]):
         def compile_typeparams(self, node: NL) -> list[ast.type_param]:
             if isinstance(node, Leaf):
                 return [ast.TypeVar(name=node.value, **get_line_range(node))]
-            return [self._make_type_param(child) for child in node.children[1::2]]
+            return [self._make_type_param(child) for child in node.children[1:-1:2]]
 
     else:
 

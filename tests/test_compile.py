@@ -292,6 +292,7 @@ if sys.version_info >= (3, 12):
     def test_type() -> None:
         assert_compiles("type x = int")
         assert_compiles("type x[T] = int")
+        assert_compiles("type x[T,] = int")
         assert_compiles("type x[T] = int | str")
         assert_compiles("type x[*Ts] = int")
         assert_compiles("type x[T, U] = int")
