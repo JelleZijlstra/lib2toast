@@ -127,9 +127,11 @@ def test_subscript() -> None:
     assert_compiles("a[1:]")
     assert_compiles("a[:2]")
     assert_compiles("a[::2]")
-    assert_compiles("a[*b]")
-    assert_compiles("a[b:=10]")
-    assert_compiles("a[b:=10, c:=20]")
+    if sys.version_info >= (3, 11):
+        assert_compiles("a[*b]")
+    if sys.version_info >= (3, 10):
+        assert_compiles("a[b:=10]")
+        assert_compiles("a[b:=10, c:=20]")
 
 
 def test_atom() -> None:
@@ -227,7 +229,8 @@ def test_assignment() -> None:
     assert_compiles("a[b] = c[d] = e")
     assert_compiles("self.a[b] = c")
     assert_compiles("a[b].c = d")
-    assert_compiles("a[*b] = c")
+    if sys.version_info >= (3, 11):
+        assert_compiles("a[*b] = c")
 
     assert_compiles("a: int")
     assert_compiles("a: int = b")
