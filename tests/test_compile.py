@@ -418,6 +418,9 @@ def test_with() -> None:
             pass
         """
     )
+    assert_compiles("with (a as b): pass")
+    assert_compiles("with (a as b, c as d): pass")
+    assert_compiles("with (a as b, c as d,): pass")
 
 
 def test_async_for() -> None:

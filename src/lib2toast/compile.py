@@ -756,33 +756,52 @@ class Compiler(Visitor[ast.AST]):
     def visit_with_stmt(self, node: Node) -> ast.With:
         consumer = _Consumer(node.children)
         consumer.expect_name("with")
-        with_items = []
-        while True:
-            with_item_node = consumer.expect()
-            if (
-                isinstance(with_item_node, Node)
-                and with_item_node.type == syms.asexpr_test
-            ):
-                context_expr = self.visit_typed(with_item_node.children[0], ast.expr)
-                with self.set_expr_context(ast.Store()):
-                    optional_vars = self.visit_typed(
-                        with_item_node.children[2], ast.expr
-                    )
-            else:
-                context_expr = self.visit_typed(with_item_node, ast.expr)
-                optional_vars = None
-            with_items.append(
-                ast.withitem(context_expr=context_expr, optional_vars=optional_vars)
-            )
-            if consumer.consume(token.COMMA) is not None:
-                continue
-            elif consumer.consume(token.COLON) is not None:
-                break
-            else:
-                raise UnsupportedSyntaxError("with")
+        with_items = self._consume_with_items_list(consumer)
         suite, end_line_range = self.compile_suite(consumer.expect())
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         return ast.With(items=with_items, body=suite, **line_range)
+
+    def _consume_with_items_list(self, consumer: _Consumer) -> list[ast.withitem]:
+        with_items = []
+        while not consumer.done():
+            with_item_node = consumer.expect()
+            if (
+                isinstance(with_item_node, Node)
+                and with_item_node.type == syms.atom
+                and with_item_node.children[0].type == token.LPAR
+            ):
+                with_item_node = with_item_node.children[1]
+            if (
+                isinstance(with_item_node, Node)
+                and with_item_node.type == syms.testlist_gexp
+            ):
+                inner_consumer = _Consumer(with_item_node.children)
+                with_items += self._consume_with_items_list(inner_consumer)
+            else:
+                if (
+                    isinstance(with_item_node, Node)
+                    and with_item_node.type == syms.asexpr_test
+                ):
+                    context_expr = self.visit_typed(
+                        with_item_node.children[0], ast.expr
+                    )
+                    with self.set_expr_context(ast.Store()):
+                        optional_vars = self.visit_typed(
+                            with_item_node.children[2], ast.expr
+                        )
+                else:
+                    context_expr = self.visit_typed(with_item_node, ast.expr)
+                    optional_vars = None
+                with_items.append(
+                    ast.withitem(context_expr=context_expr, optional_vars=optional_vars)
+                )
+            if consumer.consume(token.COMMA) is not None:
+                continue
+            elif consumer.done() or consumer.consume(token.COLON) is not None:
+                break
+            else:
+                raise UnsupportedSyntaxError("with")
+        return with_items
 
     def visit_async_stmt(self, node: Node) -> ast.AST:
         async_node = node.children[0]
