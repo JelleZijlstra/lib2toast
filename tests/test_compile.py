@@ -125,6 +125,7 @@ def test_subscript() -> None:
     assert_compiles("a[1:]")
     assert_compiles("a[:2]")
     assert_compiles("a[::2]")
+    assert_compiles("a[*b]")
 
 
 def test_atom() -> None:
@@ -221,6 +222,7 @@ def test_assignment() -> None:
     assert_compiles("a[b] = c[d] = e")
     assert_compiles("self.a[b] = c")
     assert_compiles("a[b].c = d")
+    assert_compiles("a[*b] = c")
 
     assert_compiles("a: int")
     assert_compiles("a: int = b")

@@ -1396,6 +1396,12 @@ class Compiler(Visitor[ast.AST]):
                 )
                 with self.set_expr_context(ast.Load()):
                     subscript = self.visit_typed(trailer.children[1], ast.expr)
+                if isinstance(subscript, ast.Starred):
+                    subscript = ast.Tuple(
+                        elts=[subscript],
+                        ctx=ast.Load(),
+                        **get_line_range(trailer.children[1]),
+                    )
                 atom = ast.Subscript(value=atom, slice=subscript, ctx=ctx, **line_range)
             elif trailer.children[0].type == token.DOT:  # attribute
                 assert (
