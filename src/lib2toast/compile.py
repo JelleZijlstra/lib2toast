@@ -1064,12 +1064,15 @@ class Compiler(Visitor[ast.AST]):
             return ast.Constant(value=Ellipsis, **get_line_range(node))
         elif node.children[0].type == token.BACKQUOTE:
             # repr. Why not support it?
-            callee = ast.Name(id="repr", ctx=ast.Load(), **get_line_range(node))
-            return ast.Call(
-                func=callee,
-                args=[self.visit_typed(node.children[1], ast.expr)],
-                keywords=[],
-                **get_line_range(node),
+            line_range = get_line_range(node)
+            inner = self.visit_typed(node.children[1], ast.expr)
+            return ast.JoinedStr(
+                values=[
+                    ast.FormattedValue(
+                        value=inner, conversion=ord("r"), format_spec=None, **line_range
+                    )
+                ],
+                **line_range,
             )
         else:
             # concatenated strings
