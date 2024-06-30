@@ -935,7 +935,7 @@ class Compiler(Visitor[ast.AST]):
             elts=elts, ctx=self.expr_context, **get_line_range(parent_node)
         )
 
-    visit_testlist_star_expr = visit_testlist_gexp = visit_exprlist
+    visit_testlist_star_expr = visit_testlist_gexp = visit_subject_expr = visit_exprlist
 
     def visit_atom(self, node: Node) -> ast.AST:
         if node.children[0].type == token.LPAR:
