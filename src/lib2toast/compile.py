@@ -1112,7 +1112,9 @@ class Compiler(Visitor[ast.AST]):
         if sys.version_info >= (3, 12):
             return value
         if isinstance(value, ast.Constant):
-            return ast.Constant(value=value.value, **get_line_range(node))
+            return ast.Constant(
+                value=value.value, kind=value.kind, **get_line_range(node)
+            )
         elif isinstance(value, ast.FormattedValue):
             if isinstance(value.format_spec, ast.JoinedStr):
                 format_spec = self._derange(value.format_spec, node)
@@ -1231,7 +1233,8 @@ class Compiler(Visitor[ast.AST]):
 
     def _concatenate_joined_strings(self, nodes: Sequence[LVB]) -> ast.Constant:
         strings = []
-        for node in nodes:
+        kind = None
+        for i, node in enumerate(nodes):
             if isinstance(node, ast.Constant):
                 strings.append(node.value)
             elif isinstance(node, tuple):
@@ -1240,13 +1243,17 @@ class Compiler(Visitor[ast.AST]):
                 string = f"{fstring_start.value}{fstring_middle}{end}"
                 strings.append(literal_eval(string))
             elif node.type == token.STRING:
+                if i == 0:
+                    prefix = _string_prefix(node)
+                    if "u" in prefix:
+                        kind = "u"
                 strings.append(ast.literal_eval(node.value))
             else:
                 raise RuntimeError(f"Unexpected node: {node!r}")
         line_range = unify_line_ranges(
             _get_line_range_for_lvb(nodes[0]), _get_line_range_for_lvb(nodes[-1])
         )
-        return ast.Constant(value="".join(strings), **line_range)
+        return ast.Constant(value="".join(strings), kind=kind, **line_range)
 
     def visit_expr(self, node: Node) -> ast.expr:
         op = self.visit_typed(node.children[0], ast.expr)
