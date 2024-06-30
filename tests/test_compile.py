@@ -126,6 +126,8 @@ def test_subscript() -> None:
     assert_compiles("a[:2]")
     assert_compiles("a[::2]")
     assert_compiles("a[*b]")
+    assert_compiles("a[b:=10]")
+    assert_compiles("a[b:=10, c:=20]")
 
 
 def test_atom() -> None:

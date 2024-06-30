@@ -1541,15 +1541,11 @@ class Compiler(Visitor[ast.AST]):
         return self._compile_named_expr(node.children)
 
     def visit_subscript(self, node: Node) -> Union[ast.expr, ast.Slice]:
-        if (
-            len(node.children) == 3
-            and isinstance(node.children[1], Leaf)
-            and node.children[1].value == token.COLONEQUAL
-        ):
-            return self._compile_named_expr(node.children)
         consumer = _Consumer(node.children)
         if consumer.consume(token.COLON) is None:
             lower = self.visit_typed(consumer.expect(), ast.expr)
+            if consumer.consume(token.COLONEQUAL) is not None:
+                return self._compile_named_expr(node.children)
             assert consumer.consume(token.COLON) is not None
         else:
             lower = None
