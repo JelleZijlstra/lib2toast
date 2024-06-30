@@ -14,6 +14,8 @@ from blib2to3.pgen2.grammar import Grammar
 from blib2to3.pytree import NL, Leaf, Node, type_repr
 from typing_extensions import TypedDict
 
+from .unicode_fix import fixup_unicode
+
 pygram.initialize(cache_dir=None)
 
 syms = pygram.python_symbols
@@ -1950,7 +1952,9 @@ if sys.version_info >= (3, 10):
 
 
 def compile(code: str) -> ast.AST:
-    return Compiler().visit(parse(code + "\n"))
+    tree = parse(code + "\n")
+    fixup_unicode(tree)
+    return Compiler().visit(tree)
 
 
 if __name__ == "__main__":

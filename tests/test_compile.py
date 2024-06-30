@@ -19,9 +19,6 @@ def test_literal() -> None:
 
 
 def test_cake() -> None:
-    # TODO this is broken because the .column attribute on lib2to3 nodes
-    # is based on text, and in CPython it's based on bytes.
-    return
     assert_compiles('out(" ✨ 🍰 ✨")')
 
 
