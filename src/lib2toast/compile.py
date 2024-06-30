@@ -1944,6 +1944,21 @@ if sys.version_info >= (3, 10):
                             kwd_attrs.append(name)
                             value = self.visit_typed(argument.children[2], ast.pattern)
                             kwd_patterns.append(value)
+                        elif (
+                            isinstance(argument.children[1], Leaf)
+                            and argument.children[1].type == token.NAME
+                            and argument.children[1].value == "as"
+                        ):
+                            pattern_node, _, name_node = argument.children
+                            pattern = self.visit_typed(pattern_node, ast.pattern)
+                            name = extract_name(name_node)
+                            patterns.append(
+                                ast.MatchAs(
+                                    pattern=pattern,
+                                    name=name,
+                                    **get_line_range(argument),
+                                )
+                            )
                         else:
                             raise NotImplementedError(repr(argument))
                 return ast.MatchClass(
