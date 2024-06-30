@@ -18,5 +18,5 @@ def generate_test_cases() -> Iterable[Path]:
 
 @pytest.mark.parametrize("file_path", generate_test_cases())
 def test_python_file(file_path: Path) -> None:
-    code = file_path.read_text()
+    code = file_path.read_text(encoding="utf-8")
     assert_compiles(code)
