@@ -1788,6 +1788,11 @@ if sys.version_info >= (3, 10):
                 return ast.MatchStar(name=None, **get_line_range(node))
             return ast.MatchStar(name=name, **get_line_range(node))
 
+        def visit_asexpr_test(self, node: Node) -> ast.pattern:
+            pattern = self.visit_typed(node.children[0], ast.pattern)
+            name = extract_name(node.children[2])
+            return ast.MatchAs(pattern=pattern, name=name, **get_line_range(node))
+
         def visit_term(self, node: Node) -> ast.pattern:
             expr = self.compiler.visit_term(node)
             return ast.MatchValue(value=expr, **get_line_range(node))

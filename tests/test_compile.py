@@ -755,6 +755,13 @@ if sys.version_info >= (3, 10):
                     pass
             """
         )
+        assert_compiles(
+            """
+            match a:
+                case (1 as b) | (2 as c) | [a, b]:
+                    pass
+            """
+        )
 
     def test_match_class() -> None:
         assert_compiles(
