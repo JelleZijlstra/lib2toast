@@ -764,7 +764,7 @@ class Compiler(Visitor[ast.AST]):
     def _consume_with_items_list(self, consumer: _Consumer) -> list[ast.withitem]:
         with_items = []
         while not consumer.done():
-            with_item_node = consumer.expect()
+            with_item_node = original_with_node = consumer.expect()
             if (
                 isinstance(with_item_node, Node)
                 and with_item_node.type == syms.atom
@@ -774,6 +774,10 @@ class Compiler(Visitor[ast.AST]):
             if (
                 isinstance(with_item_node, Node)
                 and with_item_node.type == syms.testlist_gexp
+                and not any(
+                    child.type == syms.namedexpr_test
+                    for child in with_item_node.children
+                )
             ):
                 inner_consumer = _Consumer(with_item_node.children)
                 with_items += self._consume_with_items_list(inner_consumer)
@@ -790,7 +794,7 @@ class Compiler(Visitor[ast.AST]):
                             with_item_node.children[2], ast.expr
                         )
                 else:
-                    context_expr = self.visit_typed(with_item_node, ast.expr)
+                    context_expr = self.visit_typed(original_with_node, ast.expr)
                     optional_vars = None
                 with_items.append(
                     ast.withitem(context_expr=context_expr, optional_vars=optional_vars)
