@@ -1907,7 +1907,7 @@ if sys.version_info >= (3, 10):
             if children[0].type == token.AWAIT:
                 raise UnsupportedSyntaxError("await in pattern matching")
             cls = self.compiler.visit_typed(children[0], ast.expr)
-            if len(children) != 2:
+            if len(children) < 2:
                 raise UnsupportedSyntaxError("trailer in pattern matching")
             trailer = children[1]
             if trailer.children[0].type == token.LPAR:  # call
