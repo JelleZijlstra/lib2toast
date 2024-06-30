@@ -31,12 +31,17 @@ def assert_compiles(code: str) -> None:
 def check_file(path: Path) -> bool:
     text = path.read_text()
     try:
+        ast_code = ast.parse(text)
+    except SyntaxError:
+        print(f"Ignoring invalid syntax in {path}")
+        traceback.print_exc()
+        return True
+    try:
         our_code = compile(text)
     except Exception:
         print(f"{'='*80}\n{path}\n{'='*80}")
         traceback.print_exc()
         return False
-    ast_code = ast.parse(text)
 
     our_dump = ast.dump(our_code, include_attributes=True, indent=2)
     ast_dump = ast.dump(ast_code, include_attributes=True, indent=2)

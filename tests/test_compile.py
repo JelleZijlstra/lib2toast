@@ -651,6 +651,13 @@ if sys.version_info >= (3, 10):
                     pass
             """
         )
+        assert_compiles(
+            """
+            match a:
+                case b.c:
+                    pass
+            """
+        )
 
     def test_match_sequence() -> None:
         assert_compiles(

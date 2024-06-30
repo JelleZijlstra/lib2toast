@@ -1895,7 +1895,7 @@ if sys.version_info >= (3, 10):
             )
             return ast.Constant(value=strings[0][:0].join(strings), **line_range)
 
-        def visit_power(self, node: Node) -> ast.MatchClass:
+        def visit_power(self, node: Node) -> ast.pattern:
             children = node.children
             if len(children) > 2 and node.children[-2].type == token.DOUBLESTAR:
                 raise UnsupportedSyntaxError("power in pattern matching")
@@ -1905,50 +1905,54 @@ if sys.version_info >= (3, 10):
             if len(children) != 2:
                 raise UnsupportedSyntaxError("trailer in pattern matching")
             trailer = children[1]
-            if trailer.children[0].type != token.LPAR:  # call
-                raise UnsupportedSyntaxError("trailer in pattern matching")
-            patterns: list[ast.pattern] = []
-            kwd_attrs: list[str] = []
-            kwd_patterns: list[ast.pattern] = []
-            if len(trailer.children) > 2:
-                arglist = trailer.children[1]
-                if not isinstance(arglist, Node) or arglist.type != syms.arglist:
-                    arguments = [arglist]
-                else:
-                    arguments = arglist.children[::2]
-                for argument in arguments:
-                    if isinstance(argument, Leaf) or argument.type != syms.argument:
-                        patterns.append(self.visit_typed(argument, ast.pattern))
-                    elif argument.children[0].type == token.STAR:
-                        raise UnsupportedSyntaxError(
-                            "starred expression in pattern matching"
-                        )
-                    elif argument.children[0].type == token.DOUBLESTAR:
-                        raise UnsupportedSyntaxError(
-                            "double-starred expression in pattern matching"
-                        )
-                    elif len(argument.children) == 2:
-                        raise UnsupportedSyntaxError(
-                            "comprehension in pattern matching"
-                        )
-                    elif argument.children[1].type == token.COLONEQUAL:
-                        raise UnsupportedSyntaxError(
-                            "named expression in pattern matching"
-                        )
-                    elif argument.children[1].type == token.EQUAL:
-                        name = extract_name(argument.children[0])
-                        kwd_attrs.append(name)
-                        value = self.visit_typed(argument.children[2], ast.pattern)
-                        kwd_patterns.append(value)
+            if trailer.children[0].type == token.LPAR:  # call
+                patterns: list[ast.pattern] = []
+                kwd_attrs: list[str] = []
+                kwd_patterns: list[ast.pattern] = []
+                if len(trailer.children) > 2:
+                    arglist = trailer.children[1]
+                    if not isinstance(arglist, Node) or arglist.type != syms.arglist:
+                        arguments = [arglist]
                     else:
-                        raise NotImplementedError(repr(argument))
-            return ast.MatchClass(
-                cls=cls,
-                patterns=patterns,
-                kwd_attrs=kwd_attrs,
-                kwd_patterns=kwd_patterns,
-                **get_line_range(node),
-            )
+                        arguments = arglist.children[::2]
+                    for argument in arguments:
+                        if isinstance(argument, Leaf) or argument.type != syms.argument:
+                            patterns.append(self.visit_typed(argument, ast.pattern))
+                        elif argument.children[0].type == token.STAR:
+                            raise UnsupportedSyntaxError(
+                                "starred expression in pattern matching"
+                            )
+                        elif argument.children[0].type == token.DOUBLESTAR:
+                            raise UnsupportedSyntaxError(
+                                "double-starred expression in pattern matching"
+                            )
+                        elif len(argument.children) == 2:
+                            raise UnsupportedSyntaxError(
+                                "comprehension in pattern matching"
+                            )
+                        elif argument.children[1].type == token.COLONEQUAL:
+                            raise UnsupportedSyntaxError(
+                                "named expression in pattern matching"
+                            )
+                        elif argument.children[1].type == token.EQUAL:
+                            name = extract_name(argument.children[0])
+                            kwd_attrs.append(name)
+                            value = self.visit_typed(argument.children[2], ast.pattern)
+                            kwd_patterns.append(value)
+                        else:
+                            raise NotImplementedError(repr(argument))
+                return ast.MatchClass(
+                    cls=cls,
+                    patterns=patterns,
+                    kwd_attrs=kwd_attrs,
+                    kwd_patterns=kwd_patterns,
+                    **get_line_range(node),
+                )
+            elif trailer.children[0].type == token.DOT:  # subscript
+                expr = self.compiler.visit_typed(node, ast.expr)
+                return ast.MatchValue(value=expr, **get_line_range(node))
+            else:
+                raise UnsupportedSyntaxError("trailer in pattern matching")
 
 
 def compile(code: str) -> ast.AST:
