@@ -841,6 +841,20 @@ if sys.version_info >= (3, 10):
                     pass
             """
         )
+        assert_compiles(
+            """
+            match a:
+                case int(a=re.match(a)):
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match a:
+                case a.b.c(a=b):
+                    pass
+            """
+        )
 
     def test_match_numerics() -> None:
         assert_compiles(
