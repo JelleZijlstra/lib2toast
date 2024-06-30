@@ -173,7 +173,7 @@ def empty_arguments() -> ast.arguments:
 def _string_prefix(leaf: Leaf) -> set[str]:
     match = re.match(r"^[A-Za-z]*", leaf.value)
     assert match, repr(leaf)
-    return set(match.group().lower())
+    return set(match.group())
 
 
 def extract_name(node: NL) -> str:
@@ -1075,7 +1075,7 @@ class Compiler(Visitor[ast.AST]):
             is_bytestring = False
             for child in node.children:
                 if isinstance(child, Leaf) and child.type == token.STRING:
-                    if "b" in _string_prefix(child):
+                    if {"b", "B"} & _string_prefix(child):
                         is_bytestring = True
                     last_value_bits.append(child)
                 elif isinstance(child, Node) and child.type == syms.fstring:
@@ -1733,16 +1733,20 @@ class Compiler(Visitor[ast.AST]):
             return ast.Constant(value=False, **line_range)
         return ast.Name(id=leaf.value, ctx=self.expr_context, **line_range)
 
-    def visit_NUMBER(self, leaf: Leaf) -> ast.AST:
+    def visit_NUMBER(self, leaf: Leaf) -> ast.Constant:
         return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))
 
-    def visit_STRING(self, leaf: Leaf) -> ast.AST:
-        return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))
+    def visit_STRING(self, leaf: Leaf) -> ast.Constant:
+        prefix = _string_prefix(leaf)
+        kind = "u" if "u" in prefix else None
+        return ast.Constant(
+            value=ast.literal_eval(leaf.value), kind=kind, **get_line_range(leaf)
+        )
 
-    def visit_COLON(self, leaf: Leaf) -> ast.AST:
+    def visit_COLON(self, leaf: Leaf) -> ast.Slice:
         return ast.Slice(lower=None, upper=None, step=None, **get_line_range(leaf))
 
-    def visit_ENDMARKER(self, _leaf: Leaf) -> ast.AST:
+    def visit_ENDMARKER(self, _leaf: Leaf) -> ast.Module:
         # empty module
         return ast.Module(body=[], type_ignores=[])
 
@@ -1765,8 +1769,7 @@ if sys.version_info >= (3, 10):
             return ast.MatchAs(pattern=None, name=leaf.value, **get_line_range(leaf))
 
         def visit_STRING(self, leaf: Leaf) -> ast.pattern:
-            value = ast.literal_eval(leaf.value)
-            expr = ast.Constant(value=value, **get_line_range(leaf))
+            expr = self.compiler.visit_STRING(leaf)
             return ast.MatchValue(value=expr, **get_line_range(leaf))
 
         visit_NUMBER = visit_STRING

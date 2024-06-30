@@ -16,6 +16,8 @@ def test_literal() -> None:
     assert_compiles('"é"')
     assert_compiles('" "')  # non-breaking space
     assert_compiles('"✨ 🍰 ✨"')
+    assert_compiles('u"x"')
+    assert_compiles('U"x"')
 
 
 def test_cake() -> None:
