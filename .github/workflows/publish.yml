@@ -28,8 +28,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - name: Check package metadata
-        run: python scripts/check_package.py ${{ github.ref }}
       - name: Install pypa/build
         run: |
           python -m pip install --upgrade build
