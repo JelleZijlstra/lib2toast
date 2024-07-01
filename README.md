@@ -3,6 +3,68 @@
 This library converts a lib2to3 concrete syntax tree (CST) to a
 standard Python AST.
 
+Potential use cases include:
+
+- Parsing Python code with less dependence on the Python version
+- Extending or modifying the Python grammar in order to experiment
+  with new features or to create a Python-like dialect
+
+## Usage
+
+This library is still at an early stage and the API may change.
+
+- `lib2toast.api.compile(code, *, grammar=..., compiler=...)`: Compile
+  a string of code to an AST. This AST can then be compiled to a Python
+  code object or executed with the built-in `compile()` and `exec()` functions.
+  By default, this uses a grammar that covers all syntax that is accepted
+  by the latest version of Python, plus some additional syntax. Pass a custom
+  _grammar_ to use different syntax. You can use `lib2toast.api.load_grammar` to
+  load a grammar object from a file. If you do this, you'll usually also want
+  to pass a custom `compiler` object by subclassing `lib2toast.compile.Compiler`.
+- `lib2toast.api.run(code, *, filename=..., grammar=..., compiler=...)`: Compiles
+  code and then immediately executes it.
+- `lib2toast.api.load_grammar(path, *, async_keywords=True)`: Load a grammar
+  file from a path. If `async_keywords` is True, treats `async` as a keyword
+  as in Python 3.7+.
+
+There is also a command-line interface: `python -m lib2toast -c code` runs
+`code` after parsing it using lib2toast.
+
+## Showcase
+
+The command-line interface shows that lib2toast supports parsing some new syntax
+in older Python versions:
+
+```
+$ python3.9 -m lib2toast -c 'print(f"{"x"}")'
+x
+```
+
+This is new syntax introduced in Python 3.12 by PEP 701.
+
+It also supports some (not all) Python 2 syntax that was removed in Python 3:
+
+```
+$ python3.9 -m lib2toast -c 'print(1 <> 2)'
+True
+```
+
+The [test suite](./tests/test_custom_grammar.py) shows some examples of syntactic
+variants of Python parsed with lib2toast. For example:
+
+```
+dataclass(frozen=True) C:
+    x: int
+    y: int = 0
+```
+
+## Implementation
+
+lib2toast is implemented on top of `blib2to3`, the fork of `lib2to3` maintained
+by the [Black](https://github.com/psf/black) project in order to parse and format
+Python code. It originates from lib2to3, a tool shipped with earlier Python 3 versions
+to support converting between Python 2 and 3 code.
+
 ## Python version support
 
 This library supports Python versions 3.9 and up.

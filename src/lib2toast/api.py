@@ -28,6 +28,7 @@ def compile(
     grammar: Grammar = pygram.python_grammar_soft_keywords,
     compiler: Compiler = Compiler(),
 ) -> ast.AST:
+    """Compile a code string to an AST."""
     tree = parse(code + "\n", grammar=grammar)
     fixup_unicode(tree)
     return compiler.visit(tree)
