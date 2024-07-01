@@ -86,3 +86,5 @@ In the future I plan to support all supported upstream versions of Python.
 
 Contributions to this project are welcome, including ideas for new ways to
 use the core functionality of the library.
+
+Check the "Issues" tab for potential areas to contribute.
