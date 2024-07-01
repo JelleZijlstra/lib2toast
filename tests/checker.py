@@ -7,7 +7,7 @@ import textwrap
 import traceback
 from pathlib import Path
 
-from lib2toast.compile import compile
+from lib2toast.api import compile
 
 
 def assert_compiles(code: str) -> None:

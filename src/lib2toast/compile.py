@@ -10,11 +10,8 @@ from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
-from blib2to3.pgen2.grammar import Grammar
 from blib2to3.pytree import NL, Leaf, Node, type_repr
 from typing_extensions import TypedDict
-
-from .unicode_fix import fixup_unicode
 
 pygram.initialize(cache_dir=None)
 
@@ -24,12 +21,6 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 LVB = Union[Leaf, ast.Constant, tuple[Leaf, Leaf]]
-
-
-def parse(code: str, grammar: Grammar = pygram.python_grammar_soft_keywords) -> NL:
-    """Parse the given code using the given grammar."""
-    driver = pygram.driver.Driver(grammar)
-    return driver.parse_string(code, debug=True)
 
 
 class UnsupportedSyntaxError(Exception):
@@ -2009,16 +2000,3 @@ if sys.version_info >= (3, 10):
                 return ast.MatchValue(value=expr, **get_line_range(node))
             else:
                 raise UnsupportedSyntaxError("trailer in pattern matching")
-
-
-def compile(code: str) -> ast.AST:
-    tree = parse(code + "\n")
-    fixup_unicode(tree)
-    return Compiler().visit(tree)
-
-
-if __name__ == "__main__":
-    import sys
-
-    code = sys.argv[1]
-    print(ast.dump(compile(code)))

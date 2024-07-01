@@ -3,7 +3,7 @@
 import ast
 from typing import Any
 
-from .compile import compile as compile_to_ast
+from .api import compile as compile_to_ast
 
 
 def run(code: str, *, filename: str = "<string>") -> dict[str, Any]:
