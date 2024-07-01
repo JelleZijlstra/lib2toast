@@ -2,7 +2,7 @@
 
 import sys
 
-from .compile import parse
+from .api import parse
 
 if __name__ == "__main__":
     code = sys.argv[1]

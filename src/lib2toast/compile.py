@@ -281,7 +281,7 @@ class Compiler(Visitor[ast.AST]):
             if self._match_compiler is None:
                 self._match_compiler = MatchCompiler(
                     token_type_to_name=self.token_type_to_name,
-                    node_type_to_name=self.node_type_to_name,
+                    grammar=self.grammar,
                     compiler=self,
                 )
             return self._match_compiler
