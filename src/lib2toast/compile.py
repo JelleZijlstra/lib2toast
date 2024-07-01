@@ -230,7 +230,9 @@ TOKEN_TYPE_TO_AUGASSIGN = {
 
 
 @dataclass
-class _Consumer:
+class Consumer:
+    """Parsing helper for parsing complicated CST nodes."""
+
     children: Sequence[NL]
     index: int = 0
 
@@ -300,7 +302,7 @@ class Compiler(Visitor[ast.AST]):
     if sys.version_info >= (3, 12):
 
         def visit_typevar(self, node: Node) -> ast.AST:
-            consumer = _Consumer(node.children)
+            consumer = Consumer(node.children)
             name = extract_name(consumer.expect(token.NAME))
             bound = None
             default = None
@@ -400,7 +402,7 @@ class Compiler(Visitor[ast.AST]):
         return statements
 
     def visit_expr_stmt(self, node: Node) -> ast.AST:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         lhs_node = consumer.expect()
         with self.set_expr_context(ast.Store()):
             lhs = self.visit_typed(lhs_node, ast.expr)
@@ -541,7 +543,7 @@ class Compiler(Visitor[ast.AST]):
             return "".join(name_pieces)
 
     def visit_import_from(self, node: Node) -> ast.ImportFrom:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("from")
         level = 0
         while consumer.consume(token.DOT) is not None:
@@ -589,13 +591,13 @@ class Compiler(Visitor[ast.AST]):
             return statements, get_line_range(node, ignore_last_leaf=True)
 
     def consume_and_compile_suite(
-        self, consumer: _Consumer
+        self, consumer: Consumer
     ) -> tuple[list[ast.stmt], LineRange]:
         consumer.expect(token.COLON)
         return self.compile_suite(consumer.expect())
 
     def visit_funcdef(self, node: Node) -> ast.FunctionDef:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("def")
         name = extract_name(consumer.expect())
         if (type_params_node := consumer.consume(syms.typeparams)) is not None:
@@ -630,7 +632,7 @@ class Compiler(Visitor[ast.AST]):
             )
 
     def visit_classdef(self, node: Node) -> ast.ClassDef:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("class")
         name = extract_name(consumer.expect())
         if (type_params_node := consumer.consume(syms.typeparams)) is not None:
@@ -667,7 +669,7 @@ class Compiler(Visitor[ast.AST]):
             )
 
     def visit_if_stmt(self, node: Node) -> ast.If:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("if")
         test = self.visit_typed(consumer.expect(), ast.expr)
         suite, end_line_range = self.consume_and_compile_suite(consumer)
@@ -678,7 +680,7 @@ class Compiler(Visitor[ast.AST]):
         return ast.If(test=test, body=suite, orelse=orelse, **line_range)
 
     def _compile_if_recursive(
-        self, consumer: _Consumer
+        self, consumer: Consumer
     ) -> tuple[list[ast.stmt], Optional[LineRange]]:
         if consumer.done():
             return [], None
@@ -710,7 +712,7 @@ class Compiler(Visitor[ast.AST]):
             return ast.Match(subject=subject, cases=cases, **line_range)
 
         def compile_case_block(self, node: NL) -> tuple[ast.match_case, LineRange]:
-            consumer = _Consumer(node.children)
+            consumer = Consumer(node.children)
             consumer.expect_name("case")
             pattern_node = consumer.expect()
             compiler = self.get_match_compiler()
@@ -726,7 +728,7 @@ class Compiler(Visitor[ast.AST]):
             )
 
     def visit_while_stmt(self, node: Node) -> ast.While:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("while")
         test = self.visit_typed(consumer.expect(), ast.expr)
         body, end_line_range = self.consume_and_compile_suite(consumer)
@@ -738,7 +740,7 @@ class Compiler(Visitor[ast.AST]):
         return ast.While(test=test, body=body, orelse=orelse, **line_range)
 
     def visit_for_stmt(self, node: Node) -> ast.For:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("for")
         with self.set_expr_context(ast.Store()):
             target = self.visit_typed(consumer.expect(), ast.expr)
@@ -753,14 +755,14 @@ class Compiler(Visitor[ast.AST]):
         return ast.For(target=target, iter=iter, body=body, orelse=orelse, **line_range)
 
     def visit_with_stmt(self, node: Node) -> ast.With:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("with")
         with_items = self._consume_with_items_list(consumer)
         suite, end_line_range = self.consume_and_compile_suite(consumer)
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         return ast.With(items=with_items, body=suite, **line_range)
 
-    def _consume_with_items_list(self, consumer: _Consumer) -> list[ast.withitem]:
+    def _consume_with_items_list(self, consumer: Consumer) -> list[ast.withitem]:
         with_items = []
         while not consumer.done():
             with_item_node = original_with_node = consumer.expect()
@@ -778,7 +780,7 @@ class Compiler(Visitor[ast.AST]):
                     for child in with_item_node.children
                 )
             ):
-                inner_consumer = _Consumer(with_item_node.children)
+                inner_consumer = Consumer(with_item_node.children)
                 with_items += self._consume_with_items_list(inner_consumer)
             else:
                 if (
@@ -852,9 +854,9 @@ class Compiler(Visitor[ast.AST]):
         return replace(stmt, decorator_list=decorator_list)
 
     def compile_except_clause(
-        self, node: Node, outer_consumer: _Consumer
+        self, node: Node, outer_consumer: Consumer
     ) -> tuple[ast.excepthandler, LineRange, bool]:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("except")
         if consumer.consume(token.STAR) is not None:
             is_try_star = True
@@ -883,7 +885,7 @@ class Compiler(Visitor[ast.AST]):
 
     def visit_try_stmt(self, node: Node) -> ast.stmt:
         is_try_star = False
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect_name("try")
         body, end_line_range = self.consume_and_compile_suite(consumer)
         handlers = []
@@ -991,7 +993,7 @@ class Compiler(Visitor[ast.AST]):
                 return ast.Set(
                     elts=[self.visit_typed(inner, ast.expr)], **get_line_range(node)
                 )
-            consumer = _Consumer(inner.children)
+            consumer = Consumer(inner.children)
             is_dict = False
             keys: list[Optional[ast.expr]] = []
             values = []
@@ -1172,7 +1174,7 @@ class Compiler(Visitor[ast.AST]):
     def compile_fstring_replacement_field(
         self, node: Node, fstring_start: Leaf
     ) -> tuple[Optional[ast.Constant], ast.FormattedValue]:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         consumer.expect(token.LBRACE)
         expr_node = consumer.expect()
         expr = self.visit_typed(expr_node, ast.expr)
@@ -1551,7 +1553,7 @@ class Compiler(Visitor[ast.AST]):
         return self._compile_named_expr(node.children)
 
     def visit_subscript(self, node: Node) -> Union[ast.expr, ast.Slice]:
-        consumer = _Consumer(node.children)
+        consumer = Consumer(node.children)
         if consumer.consume(token.COLON) is None:
             lower = self.visit_typed(consumer.expect(), ast.expr)
             if consumer.consume(token.COLONEQUAL) is not None:
@@ -1609,7 +1611,7 @@ class Compiler(Visitor[ast.AST]):
         defaults: list[ast.expr] = []
         current_args = args
 
-        consumer = _Consumer(children)
+        consumer = Consumer(children)
         while True:
             tok = consumer.consume()
             if tok is None:
@@ -1873,7 +1875,7 @@ if sys.version_info >= (3, 10):
                 inner = node.children[1]
                 if inner.type != syms.dictsetmaker:
                     raise UnsupportedSyntaxError("set in pattern matching")
-                consumer = _Consumer(inner.children)
+                consumer = Consumer(inner.children)
                 keys = []
                 patterns = []
                 rest = None
