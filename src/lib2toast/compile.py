@@ -3,19 +3,20 @@
 import ast
 import re
 import sys
+import types
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
-from blib2to3.pytree import NL, Leaf, Node, type_repr
+from blib2to3.pgen2.grammar import Grammar
+from blib2to3.pytree import NL, Leaf, Node
 from typing_extensions import TypedDict
 
 pygram.initialize(cache_dir=None)
-
-syms = pygram.python_symbols
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -30,15 +31,21 @@ class UnsupportedSyntaxError(Exception):
 @dataclass
 class Visitor(Generic[T]):
     token_type_to_name: dict[int, str] = field(default_factory=lambda: token.tok_name)
-    node_type_to_name: Callable[[int], Union[str, int]] = field(
-        default_factory=lambda: type_repr
-    )
+    grammar: Grammar = pygram.python_grammar_soft_keywords
+
+    @cached_property
+    def syms(self) -> types.SimpleNamespace:
+        return types.SimpleNamespace(**self.grammar.symbol2number)
+
+    @cached_property
+    def node_type_to_name(self) -> dict[int, str]:
+        return {value: key for key, value in self.grammar.symbol2number.items()}
 
     def get_node_name(self, node: NL) -> str:
         if node.type < 256:
             return self.token_type_to_name[node.type]
         else:
-            return str(self.node_type_to_name(node.type))
+            return str(self.node_type_to_name[node.type])
 
     def visit(self, node: NL) -> T:
         name = self.get_node_name(node)
@@ -369,7 +376,7 @@ class Compiler(Visitor[ast.AST]):
         for node in nodes:
             if node.type in (token.ENDMARKER, token.NEWLINE):
                 continue
-            if isinstance(node, Node) and node.type == syms.simple_stmt:
+            if isinstance(node, Node) and node.type == self.syms.simple_stmt:
                 statements += self.compile_simple_stmt(node)
             else:
                 statements.append(self.visit_typed(node, ast.stmt))
@@ -397,7 +404,7 @@ class Compiler(Visitor[ast.AST]):
         lhs_node = consumer.expect()
         with self.set_expr_context(ast.Store()):
             lhs = self.visit_typed(lhs_node, ast.expr)
-        if (annassign := consumer.consume(syms.annassign)) is not None:
+        if (annassign := consumer.consume(self.syms.annassign)) is not None:
             annotation = self.visit_typed(annassign.children[1], ast.expr)
             if len(annassign.children) == 4:
                 value = self.visit_typed(annassign.children[3], ast.expr)
@@ -446,7 +453,7 @@ class Compiler(Visitor[ast.AST]):
     def visit_del_stmt(self, node: Node) -> ast.AST:
         with self.set_expr_context(ast.Del()):
             target = self.visit_typed(node.children[1], ast.expr)
-        if isinstance(target, ast.Tuple) and node.children[1].type != syms.atom:
+        if isinstance(target, ast.Tuple) and node.children[1].type != self.syms.atom:
             targets = target.elts
         else:
             targets = [target]
@@ -498,14 +505,14 @@ class Compiler(Visitor[ast.AST]):
     def compile_aliases(self, node: NL) -> list[ast.alias]:
         aliases: list[ast.alias] = []
         if isinstance(node, Node) and node.type in (
-            syms.dotted_as_names,
-            syms.import_as_names,
+            self.syms.dotted_as_names,
+            self.syms.import_as_names,
         ):
             children = node.children[::2]
         else:
             children = [node]
         for child in children:
-            if child.type in (syms.dotted_as_name, syms.import_as_name):
+            if child.type in (self.syms.dotted_as_name, self.syms.import_as_name):
                 name_node, _, asname_node = child.children
                 asname = extract_name(asname_node)
             else:
@@ -574,7 +581,7 @@ class Compiler(Visitor[ast.AST]):
 
     # Compound statements
     def compile_suite(self, node: NL) -> tuple[list[ast.stmt], LineRange]:
-        if isinstance(node, Node) and node.type == syms.suite:
+        if isinstance(node, Node) and node.type == self.syms.suite:
             statements = self.compile_statement_list(node.children[2:-1])
             return statements, get_line_range_for_ast(statements[-1])
         else:
@@ -591,7 +598,7 @@ class Compiler(Visitor[ast.AST]):
         consumer = Consumer(node.children)
         consumer.expect_name("def")
         name = extract_name(consumer.expect())
-        if (type_params_node := consumer.consume(syms.typeparams)) is not None:
+        if (type_params_node := consumer.consume(self.syms.typeparams)) is not None:
             type_params = self.compile_typeparams(type_params_node)
         else:
             type_params = []
@@ -626,7 +633,7 @@ class Compiler(Visitor[ast.AST]):
         consumer = Consumer(node.children)
         consumer.expect_name("class")
         name = extract_name(consumer.expect())
-        if (type_params_node := consumer.consume(syms.typeparams)) is not None:
+        if (type_params_node := consumer.consume(self.syms.typeparams)) is not None:
             type_params = self.compile_typeparams(type_params_node)
         else:
             type_params = []
@@ -708,7 +715,7 @@ class Compiler(Visitor[ast.AST]):
             pattern_node = consumer.expect()
             compiler = self.get_match_compiler()
             pattern = compiler.visit(pattern_node)
-            if (guard_node := consumer.consume(syms.guard)) is not None:
+            if (guard_node := consumer.consume(self.syms.guard)) is not None:
                 guard = self.visit_typed(guard_node.children[1], ast.expr)
             else:
                 guard = None
@@ -759,15 +766,15 @@ class Compiler(Visitor[ast.AST]):
             with_item_node = original_with_node = consumer.expect()
             if (
                 isinstance(with_item_node, Node)
-                and with_item_node.type == syms.atom
+                and with_item_node.type == self.syms.atom
                 and with_item_node.children[0].type == token.LPAR
             ):
                 with_item_node = with_item_node.children[1]
             if (
                 isinstance(with_item_node, Node)
-                and with_item_node.type == syms.testlist_gexp
+                and with_item_node.type == self.syms.testlist_gexp
                 and not any(
-                    child.type == syms.namedexpr_test
+                    child.type == self.syms.namedexpr_test
                     for child in with_item_node.children
                 )
             ):
@@ -776,7 +783,7 @@ class Compiler(Visitor[ast.AST]):
             else:
                 if (
                     isinstance(with_item_node, Node)
-                    and with_item_node.type == syms.asexpr_test
+                    and with_item_node.type == self.syms.asexpr_test
                 ):
                     context_expr = self.visit_typed(
                         with_item_node.children[0], ast.expr
@@ -831,10 +838,10 @@ class Compiler(Visitor[ast.AST]):
     visit_async_funcdef = visit_async_stmt
 
     def compile_decorators(self, node: NL) -> list[ast.expr]:
-        if node.type == syms.decorator:
+        if node.type == self.syms.decorator:
             return [self.visit_typed(node.children[1], ast.expr)]
         else:
-            assert node.type == syms.decorators
+            assert node.type == self.syms.decorators, repr(node)
             return [
                 self.visit_typed(child.children[1], ast.expr) for child in node.children
             ]
@@ -885,7 +892,7 @@ class Compiler(Visitor[ast.AST]):
         while not consumer.done():
             keyword = consumer.expect()
             if isinstance(keyword, Node):
-                assert keyword.type == syms.except_clause
+                assert keyword.type == self.syms.except_clause
                 handler, end_line_range, is_try_star = self.compile_except_clause(
                     keyword, consumer
                 )
@@ -936,7 +943,7 @@ class Compiler(Visitor[ast.AST]):
     def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
         if parent_node is None:
             parent_node = node
-        if node.children[1].type == syms.old_comp_for:
+        if node.children[1].type == self.syms.old_comp_for:
             elt = self.visit_typed(node.children[0], ast.expr)
             comps = self._compile_comprehension(node.children[1])
             return ast.GeneratorExp(
@@ -955,7 +962,7 @@ class Compiler(Visitor[ast.AST]):
                 return ast.Tuple(elts=[], ctx=self.expr_context, **get_line_range(node))
             # tuples, parenthesized expressions
             middle = node.children[1]
-            if isinstance(middle, Node) and middle.type == syms.testlist_gexp:
+            if isinstance(middle, Node) and middle.type == self.syms.testlist_gexp:
                 return self.visit_testlist_gexp(middle, node)
             return self.visit(middle)
         elif node.children[0].type == token.LSQB:
@@ -963,13 +970,13 @@ class Compiler(Visitor[ast.AST]):
                 return ast.List(elts=[], ctx=self.expr_context, **get_line_range(node))
             # lists
             inner = node.children[1]
-            if inner.type != syms.listmaker:
+            if inner.type != self.syms.listmaker:
                 return ast.List(
                     elts=[self.visit_typed(inner, ast.expr)],
                     ctx=self.expr_context,
                     **get_line_range(node),
                 )
-            if inner.children[1].type == syms.old_comp_for:
+            if inner.children[1].type == self.syms.old_comp_for:
                 elt = self.visit_typed(inner.children[0], ast.expr)
                 comps = self._compile_comprehension(inner.children[1])
                 return ast.ListComp(elt=elt, generators=comps, **get_line_range(node))
@@ -980,7 +987,7 @@ class Compiler(Visitor[ast.AST]):
                 return ast.Dict(keys=[], values=[], **get_line_range(node))
             # sets, dicts
             inner = node.children[1]
-            if inner.type != syms.dictsetmaker:
+            if inner.type != self.syms.dictsetmaker:
                 return ast.Set(
                     elts=[self.visit_typed(inner, ast.expr)], **get_line_range(node)
                 )
@@ -995,7 +1002,7 @@ class Compiler(Visitor[ast.AST]):
                     expr = consumer.expect()
                     keys.append(None)
                     values.append(self.visit_typed(expr, ast.expr))
-                elif star_expr := consumer.consume(syms.star_expr):
+                elif star_expr := consumer.consume(self.syms.star_expr):
                     elts.append(
                         ast.Starred(
                             value=self.visit_typed(star_expr.children[1], ast.expr),
@@ -1017,7 +1024,7 @@ class Compiler(Visitor[ast.AST]):
                         is_dict = True
                     else:
                         elts.append(self.visit_typed(key_node, ast.expr))
-                    if comp_for := consumer.consume(syms.comp_for):
+                    if comp_for := consumer.consume(self.syms.comp_for):
                         comps = self._compile_comprehension(comp_for)
                         if is_dict:
                             assert len(keys) == 1 and keys[0] is not None, keys
@@ -1074,7 +1081,7 @@ class Compiler(Visitor[ast.AST]):
                     if {"b", "B"} & _string_prefix(child):
                         is_bytestring = True
                     last_value_bits.append(child)
-                elif isinstance(child, Node) and child.type == syms.fstring:
+                elif isinstance(child, Node) and child.type == self.syms.fstring:
                     if is_bytestring:
                         raise UnsupportedSyntaxError("f-string in bytestring")
                     contains_fstring = True
@@ -1426,14 +1433,14 @@ class Compiler(Visitor[ast.AST]):
     def _compile_arglist(
         self, node: NL, parent_node: NL
     ) -> tuple[list[ast.expr], list[ast.keyword]]:
-        if not isinstance(node, Node) or node.type != syms.arglist:
+        if not isinstance(node, Node) or node.type != self.syms.arglist:
             arguments = [node]
         else:
             arguments = node.children[::2]
         args: list[ast.expr] = []
         keywords: list[ast.keyword] = []
         for argument in arguments:
-            if isinstance(argument, Leaf) or argument.type != syms.argument:
+            if isinstance(argument, Leaf) or argument.type != self.syms.argument:
                 args.append(self.visit_typed(argument, ast.expr))
             elif argument.children[0].type == token.STAR:
                 args.append(
@@ -1486,7 +1493,7 @@ class Compiler(Visitor[ast.AST]):
         return args, keywords
 
     def _compile_comprehension(self, node: NL) -> list[ast.comprehension]:
-        assert node.type in (syms.old_comp_for, syms.comp_for), repr(node)
+        assert node.type in (self.syms.old_comp_for, self.syms.comp_for), repr(node)
         if node.children[0].type == token.ASYNC:
             is_async = 1
             children = node.children[1:]
@@ -1552,7 +1559,7 @@ class Compiler(Visitor[ast.AST]):
             assert consumer.consume(token.COLON) is not None
         else:
             lower = None
-        if (sliceop := consumer.consume(syms.sliceop)) is not None:
+        if (sliceop := consumer.consume(self.syms.sliceop)) is not None:
             step = self.visit_typed(sliceop.children[1], ast.expr)
             upper = None
         elif consumer.consume(token.COLON) is None:
@@ -1560,7 +1567,7 @@ class Compiler(Visitor[ast.AST]):
                 upper = None
             else:
                 upper = self.visit_typed(upper_node, ast.expr)
-            if (sliceop := consumer.consume(syms.sliceop)) is not None:
+            if (sliceop := consumer.consume(self.syms.sliceop)) is not None:
                 step = self.visit_typed(sliceop.children[1], ast.expr)
             else:
                 step = None
@@ -1588,7 +1595,8 @@ class Compiler(Visitor[ast.AST]):
 
     def compile_args(self, node: NL) -> ast.arguments:
         if (isinstance(node, Leaf) and node.type == token.NAME) or (
-            isinstance(node, Node) and node.type in (syms.tname, syms.tname_star)
+            isinstance(node, Node)
+            and node.type in (self.syms.tname, self.syms.tname_star)
         ):
             children = [node]
         else:
@@ -1624,7 +1632,10 @@ class Compiler(Visitor[ast.AST]):
                         defaults.append(default)
                 elif current_args is kwonlyargs:
                     kw_defaults.append(None)
-            elif isinstance(tok, Node) and tok.type in (syms.tname, syms.tname_star):
+            elif isinstance(tok, Node) and tok.type in (
+                self.syms.tname,
+                self.syms.tname_star,
+            ):
                 arg_name = extract_name(tok.children[0])
                 annotation = self.visit_typed(tok.children[2], ast.expr)
                 current_args.append(
@@ -1654,7 +1665,7 @@ class Compiler(Visitor[ast.AST]):
                     name = args_node.value
                     annotation = None
                 else:
-                    assert args_node.type == syms.tname
+                    assert args_node.type == self.syms.tname
                     assert isinstance(args_node.children[0], Leaf)
                     name = args_node.children[0].value
                     annotation = self.visit_typed(args_node.children[2], ast.expr)
@@ -1677,7 +1688,7 @@ class Compiler(Visitor[ast.AST]):
                         name = args_node.value
                         annotation = None
                     else:
-                        assert args_node.type == syms.tname_star
+                        assert args_node.type == self.syms.tname_star
                         assert isinstance(args_node.children[0], Leaf)
                         name = args_node.children[0].value
                         annotation = self.visit_typed(args_node.children[2], ast.expr)
@@ -1704,7 +1715,7 @@ class Compiler(Visitor[ast.AST]):
         )
 
     def visit_yield_expr(self, node: Node) -> Union[ast.Yield, ast.YieldFrom]:
-        if node.children[1].type == syms.yield_arg:
+        if node.children[1].type == self.syms.yield_arg:
             return ast.YieldFrom(
                 value=self.visit_typed(node.children[1].children[1], ast.expr),
                 **get_line_range(node),
@@ -1793,7 +1804,7 @@ if sys.version_info >= (3, 10):
         ) -> ast.MatchSequence:
             if parent_node is None:
                 parent_node = node
-            if node.children[1].type == syms.old_comp_for:
+            if node.children[1].type == self.syms.old_comp_for:
                 raise UnsupportedSyntaxError("comprehension in pattern matching")
             elts = [
                 self.visit_typed(child, ast.pattern) for child in node.children[::2]
@@ -1838,7 +1849,7 @@ if sys.version_info >= (3, 10):
                     return ast.MatchSequence(patterns=[], **get_line_range(node))
                 # tuples, parenthesized expressions
                 middle = node.children[1]
-                if isinstance(middle, Node) and middle.type == syms.testlist_gexp:
+                if isinstance(middle, Node) and middle.type == self.syms.testlist_gexp:
                     return self.visit_testlist_gexp(middle, node)
                 return self.visit(middle)
             elif node.children[0].type == token.LSQB:
@@ -1846,12 +1857,12 @@ if sys.version_info >= (3, 10):
                     return ast.MatchSequence(patterns=[], **get_line_range(node))
                 # lists
                 inner = node.children[1]
-                if inner.type != syms.listmaker:
+                if inner.type != self.syms.listmaker:
                     return ast.MatchSequence(
                         patterns=[self.visit_typed(inner, ast.pattern)],
                         **get_line_range(node),
                     )
-                if inner.children[1].type == syms.old_comp_for:
+                if inner.children[1].type == self.syms.old_comp_for:
                     raise UnsupportedSyntaxError("comprehension in pattern matching")
                 elts = [
                     self.visit_typed(child, ast.pattern)
@@ -1864,7 +1875,7 @@ if sys.version_info >= (3, 10):
                         keys=[], patterns=[], rest=None, **get_line_range(node)
                     )
                 inner = node.children[1]
-                if inner.type != syms.dictsetmaker:
+                if inner.type != self.syms.dictsetmaker:
                     raise UnsupportedSyntaxError("set in pattern matching")
                 consumer = Consumer(inner.children)
                 keys = []
@@ -1873,7 +1884,7 @@ if sys.version_info >= (3, 10):
                 while not consumer.done():
                     if consumer.consume(token.DOUBLESTAR) is not None:
                         rest = extract_name(consumer.expect(token.NAME))
-                    elif consumer.consume(syms.star_expr):
+                    elif consumer.consume(self.syms.star_expr):
                         raise UnsupportedSyntaxError(
                             "starred expression in pattern matching"
                         )
@@ -1890,7 +1901,7 @@ if sys.version_info >= (3, 10):
                             patterns.append(pattern)
                         else:
                             raise UnsupportedSyntaxError("set in pattern matching")
-                        if consumer.consume(syms.comp_for):
+                        if consumer.consume(self.syms.comp_for):
                             raise UnsupportedSyntaxError(
                                 "comprehension in pattern matching"
                             )
@@ -1945,12 +1956,18 @@ if sys.version_info >= (3, 10):
                     arguments = []
                 else:
                     arglist = trailer.children[1]
-                    if not isinstance(arglist, Node) or arglist.type != syms.arglist:
+                    if (
+                        not isinstance(arglist, Node)
+                        or arglist.type != self.syms.arglist
+                    ):
                         arguments = [arglist]
                     else:
                         arguments = arglist.children[::2]
                 for argument in arguments:
-                    if isinstance(argument, Leaf) or argument.type != syms.argument:
+                    if (
+                        isinstance(argument, Leaf)
+                        or argument.type != self.syms.argument
+                    ):
                         patterns.append(self.visit_typed(argument, ast.pattern))
                     elif argument.children[0].type == token.STAR:
                         raise UnsupportedSyntaxError(
