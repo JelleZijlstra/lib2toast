@@ -264,6 +264,9 @@ class _Consumer:
             raise RuntimeError(f"Expected {name!r}")
         return node
 
+    def next_is(self, typ: int) -> bool:
+        return self.index < len(self.children) and self.children[self.index].type == typ
+
     def done(self) -> bool:
         return self.index >= len(self.children)
 
@@ -585,6 +588,12 @@ class Compiler(Visitor[ast.AST]):
             statements = self.compile_statement_list([node])
             return statements, get_line_range(node, ignore_last_leaf=True)
 
+    def consume_and_compile_suite(
+        self, consumer: _Consumer
+    ) -> tuple[list[ast.stmt], LineRange]:
+        consumer.expect(token.COLON)
+        return self.compile_suite(consumer.expect())
+
     def visit_funcdef(self, node: Node) -> ast.FunctionDef:
         consumer = _Consumer(node.children)
         consumer.expect_name("def")
@@ -598,8 +607,7 @@ class Compiler(Visitor[ast.AST]):
             returns = self.visit_typed(consumer.expect(), ast.expr)
         else:
             returns = None
-        consumer.expect(token.COLON)
-        suite, end_line_range = self.compile_suite(consumer.expect())
+        suite, end_line_range = self.consume_and_compile_suite(consumer)
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         if sys.version_info >= (3, 12):
             return ast.FunctionDef(
@@ -636,8 +644,7 @@ class Compiler(Visitor[ast.AST]):
             if next_node.type != token.RPAR:
                 bases, keywords = self._compile_arglist(next_node, next_node)
                 consumer.expect(token.RPAR)
-        consumer.expect(token.COLON)
-        suite, end_line_range = self.compile_suite(consumer.expect())
+        suite, end_line_range = self.consume_and_compile_suite(consumer)
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         if sys.version_info >= (3, 12):
             return ast.ClassDef(
@@ -663,8 +670,7 @@ class Compiler(Visitor[ast.AST]):
         consumer = _Consumer(node.children)
         consumer.expect_name("if")
         test = self.visit_typed(consumer.expect(), ast.expr)
-        consumer.expect(token.COLON)
-        suite, end_line_range = self.compile_suite(consumer.expect())
+        suite, end_line_range = self.consume_and_compile_suite(consumer)
         orelse, maybe_line_range = self._compile_if_recursive(consumer)
         if maybe_line_range is not None:
             end_line_range = maybe_line_range
@@ -679,12 +685,10 @@ class Compiler(Visitor[ast.AST]):
         keyword_node = consumer.expect(token.NAME)
         keyword = extract_name(keyword_node)
         if keyword == "else":
-            consumer.expect(token.COLON)
-            return self.compile_suite(consumer.expect())
+            return self.consume_and_compile_suite(consumer)
         else:
             test = self.visit_typed(consumer.expect(), ast.expr)
-            consumer.expect(token.COLON)
-            suite, end_line_range = self.compile_suite(consumer.expect())
+            suite, end_line_range = self.consume_and_compile_suite(consumer)
             orelse, maybe_line_range = self._compile_if_recursive(consumer)
             if maybe_line_range is not None:
                 end_line_range = maybe_line_range
@@ -715,8 +719,7 @@ class Compiler(Visitor[ast.AST]):
                 guard = self.visit_typed(guard_node.children[1], ast.expr)
             else:
                 guard = None
-            consumer.expect(token.COLON)
-            suite, end_line_range = self.compile_suite(consumer.expect())
+            suite, end_line_range = self.consume_and_compile_suite(consumer)
             return (
                 ast.match_case(pattern=pattern, guard=guard, body=suite),
                 end_line_range,
@@ -726,11 +729,9 @@ class Compiler(Visitor[ast.AST]):
         consumer = _Consumer(node.children)
         consumer.expect_name("while")
         test = self.visit_typed(consumer.expect(), ast.expr)
-        consumer.expect(token.COLON)
-        body, end_line_range = self.compile_suite(consumer.expect())
+        body, end_line_range = self.consume_and_compile_suite(consumer)
         if consumer.consume_name("else") is not None:
-            consumer.expect(token.COLON)
-            orelse, end_line_range = self.compile_suite(consumer.expect())
+            orelse, end_line_range = self.consume_and_compile_suite(consumer)
         else:
             orelse = []
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
@@ -743,11 +744,9 @@ class Compiler(Visitor[ast.AST]):
             target = self.visit_typed(consumer.expect(), ast.expr)
         consumer.expect_name("in")
         iter = self.visit_typed(consumer.expect(), ast.expr)
-        consumer.expect(token.COLON)
-        body, end_line_range = self.compile_suite(consumer.expect())
+        body, end_line_range = self.consume_and_compile_suite(consumer)
         if consumer.consume_name("else") is not None:
-            consumer.expect(token.COLON)
-            orelse, end_line_range = self.compile_suite(consumer.expect())
+            orelse, end_line_range = self.consume_and_compile_suite(consumer)
         else:
             orelse = []
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
@@ -757,7 +756,7 @@ class Compiler(Visitor[ast.AST]):
         consumer = _Consumer(node.children)
         consumer.expect_name("with")
         with_items = self._consume_with_items_list(consumer)
-        suite, end_line_range = self.compile_suite(consumer.expect())
+        suite, end_line_range = self.consume_and_compile_suite(consumer)
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         return ast.With(items=with_items, body=suite, **line_range)
 
@@ -801,7 +800,7 @@ class Compiler(Visitor[ast.AST]):
                 )
             if consumer.consume(token.COMMA) is not None:
                 continue
-            elif consumer.done() or consumer.consume(token.COLON) is not None:
+            elif consumer.done() or consumer.next_is(token.COLON):
                 break
             else:
                 raise UnsupportedSyntaxError("with")
@@ -874,8 +873,7 @@ class Compiler(Visitor[ast.AST]):
         else:
             name = None
 
-        outer_consumer.expect(token.COLON)
-        suite, end_line_range = self.compile_suite(outer_consumer.expect())
+        suite, end_line_range = self.consume_and_compile_suite(outer_consumer)
         line_range = unify_line_ranges(get_line_range(node.children[0]), end_line_range)
         return (
             ast.ExceptHandler(type=typ, name=name, body=suite, **line_range),
@@ -887,8 +885,7 @@ class Compiler(Visitor[ast.AST]):
         is_try_star = False
         consumer = _Consumer(node.children)
         consumer.expect_name("try")
-        consumer.expect(token.COLON)
-        body, end_line_range = self.compile_suite(consumer.expect())
+        body, end_line_range = self.consume_and_compile_suite(consumer)
         handlers = []
         orelse = []
         finalbody = []
@@ -906,8 +903,7 @@ class Compiler(Visitor[ast.AST]):
                     "except",
                     "finally",
                 ), repr(keyword)
-                consumer.expect(token.COLON)
-                suite, end_line_range = self.compile_suite(consumer.expect())
+                suite, end_line_range = self.consume_and_compile_suite(consumer)
                 if keyword.value == "else":
                     orelse = suite
                 elif keyword.value == "except":
