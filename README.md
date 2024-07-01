@@ -65,6 +65,13 @@ by the [Black](https://github.com/psf/black) project in order to parse and forma
 Python code. It originates from lib2to3, a tool shipped with earlier Python 3 versions
 to support converting between Python 2 and 3 code.
 
+The core part of the implementation is a tool that converts Python code to an
+AST. This makes it easy to test for correctness: just run Python's built-in
+`ast.parse` and assert that it produces the same tree, including line and
+column numbers. So far I have tested the compiler on lib2toast's own code
+as well as some of Black's code (the Black test cases were especially helpful),
+but there are probably more bugs.
+
 ## Python version support
 
 This library supports Python versions 3.9 and up.
@@ -74,3 +81,8 @@ support period, the AST structure is quite different between 3.8 and 3.9,
 and I don't have a use case for 3.8.
 
 In the future I plan to support all supported upstream versions of Python.
+
+## Contributing
+
+Contributions to this project are welcome, including ideas for new ways to
+use the core functionality of the library.
