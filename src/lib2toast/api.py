@@ -1,9 +1,11 @@
 """Public API functions."""
 
 import ast
+import builtins
 import functools
 import sys
 from pathlib import Path
+from typing import Any
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import pgen
@@ -29,6 +31,22 @@ def compile(
     tree = parse(code + "\n", grammar=grammar)
     fixup_unicode(tree)
     return compiler.visit(tree)
+
+
+def run(
+    code: str,
+    *,
+    filename: str = "<string>",
+    grammar: Grammar = pygram.python_grammar_soft_keywords,
+    compiler: Compiler = Compiler(),
+) -> dict[str, Any]:
+    """Run code after compilation using lib2toast."""
+    tree = compile(code, grammar=grammar, compiler=compiler)
+    assert isinstance(tree, ast.Module)
+    code_object = builtins.compile(tree, filename, "exec", dont_inherit=True)
+    ns: dict[str, Any] = {}
+    exec(code_object, ns)
+    return ns
 
 
 @functools.cache

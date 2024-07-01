@@ -2,7 +2,7 @@ import os
 import textwrap
 from typing import Any
 
-from lib2toast.run import run
+from lib2toast.api import run
 
 
 def check_run(code: str, expected_vars: dict[str, Any]) -> None:
