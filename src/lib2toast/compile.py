@@ -372,7 +372,7 @@ class Compiler(Visitor[ast.AST]):
             raise UnsupportedSyntaxError(f"Type parameters: {node!r}")
 
     def compile_statement_list(self, nodes: Sequence[NL]) -> list[ast.stmt]:
-        statements = []
+        statements: list[ast.stmt] = []
         for node in nodes:
             if node.type in (token.ENDMARKER, token.NEWLINE):
                 continue
@@ -421,7 +421,7 @@ class Compiler(Visitor[ast.AST]):
                 **get_line_range(node),
             )
         elif consumer.consume(token.EQUAL) is not None:
-            exprs = []
+            exprs: list[ast.expr] = []
             rhs: Optional[ast.expr] = None
             while True:
                 child = consumer.expect()
@@ -483,7 +483,7 @@ class Compiler(Visitor[ast.AST]):
         )
 
     def visit_global_stmt(self, node: Node) -> Union[ast.Global, ast.Nonlocal]:
-        names = []
+        names: list[str] = []
         for name_node in node.children[1::2]:
             assert isinstance(name_node, Leaf)
             names.append(name_node.value)
@@ -521,7 +521,7 @@ class Compiler(Visitor[ast.AST]):
             if isinstance(name_node, Leaf):
                 name = extract_name(name_node)
             else:
-                name_pieces = []
+                name_pieces: list[str] = []
                 for c in name_node.children:
                     assert isinstance(c, Leaf) and c.type in (token.NAME, token.DOT)
                     name_pieces.append(c.value)
@@ -534,7 +534,7 @@ class Compiler(Visitor[ast.AST]):
         if isinstance(node, Leaf):
             return extract_name(node)
         else:
-            name_pieces = []
+            name_pieces: list[str] = []
             for c in node.children:
                 assert isinstance(c, Leaf) and c.type in (token.NAME, token.DOT)
                 name_pieces.append(c.value)
@@ -761,7 +761,7 @@ class Compiler(Visitor[ast.AST]):
         return ast.With(items=with_items, body=suite, **line_range)
 
     def _consume_with_items_list(self, consumer: Consumer) -> list[ast.withitem]:
-        with_items = []
+        with_items: list[ast.withitem] = []
         while not consumer.done():
             with_item_node = original_with_node = consumer.expect()
             if (
@@ -853,7 +853,7 @@ class Compiler(Visitor[ast.AST]):
 
     def compile_except_clause(
         self, node: Node, outer_consumer: Consumer
-    ) -> tuple[ast.excepthandler, LineRange, bool]:
+    ) -> tuple[ast.ExceptHandler, LineRange, bool]:
         consumer = Consumer(node.children)
         consumer.expect_name("except")
         if consumer.consume(token.STAR) is not None:
@@ -886,7 +886,7 @@ class Compiler(Visitor[ast.AST]):
         consumer = Consumer(node.children)
         consumer.expect_name("try")
         body, end_line_range = self.consume_and_compile_suite(consumer)
-        handlers = []
+        handlers: list[ast.ExceptHandler] = []
         orelse = []
         finalbody = []
         while not consumer.done():
@@ -940,7 +940,9 @@ class Compiler(Visitor[ast.AST]):
             )
 
     # Expressions
-    def visit_exprlist(self, node: Node, parent_node: Optional[Node] = None) -> ast.AST:
+    def visit_exprlist(
+        self, node: Node, parent_node: Optional[Node] = None
+    ) -> ast.expr:
         if parent_node is None:
             parent_node = node
         if node.children[1].type == self.syms.old_comp_for:
@@ -956,7 +958,7 @@ class Compiler(Visitor[ast.AST]):
 
     visit_testlist_star_expr = visit_testlist_gexp = visit_subject_expr = visit_exprlist
 
-    def visit_atom(self, node: Node) -> ast.AST:
+    def visit_atom(self, node: Node) -> ast.expr:
         if node.children[0].type == token.LPAR:
             if len(node.children) == 2:
                 return ast.Tuple(elts=[], ctx=self.expr_context, **get_line_range(node))
@@ -964,7 +966,7 @@ class Compiler(Visitor[ast.AST]):
             middle = node.children[1]
             if isinstance(middle, Node) and middle.type == self.syms.testlist_gexp:
                 return self.visit_testlist_gexp(middle, node)
-            return self.visit(middle)
+            return self.visit_typed(middle, ast.expr)
         elif node.children[0].type == token.LSQB:
             if len(node.children) == 2:
                 return ast.List(elts=[], ctx=self.expr_context, **get_line_range(node))
@@ -994,8 +996,8 @@ class Compiler(Visitor[ast.AST]):
             consumer = Consumer(inner.children)
             is_dict = False
             keys: list[Optional[ast.expr]] = []
-            values = []
-            elts = []
+            values: list[ast.expr] = []
+            elts: list[ast.expr] = []
             while not consumer.done():
                 if consumer.consume(token.DOUBLESTAR) is not None:
                     is_dict = True
@@ -1092,7 +1094,7 @@ class Compiler(Visitor[ast.AST]):
             if last_value_bits:
                 if is_bytestring:
                     assert not values
-                    bits = []
+                    bits: list[bytes] = []
                     for leaf in last_value_bits:
                         assert isinstance(leaf, Leaf)
                         bits.append(ast.literal_eval(leaf.value))
@@ -1235,7 +1237,7 @@ class Compiler(Visitor[ast.AST]):
         )
 
     def _concatenate_joined_strings(self, nodes: Sequence[LVB]) -> ast.Constant:
-        strings = []
+        strings: list[str] = []
         kind = None
         for i, node in enumerate(nodes):
             if isinstance(node, ast.Constant):
@@ -1244,7 +1246,10 @@ class Compiler(Visitor[ast.AST]):
                 fstring_start, fstring_middle = node
                 end = fstring_start.value.lstrip("rRfF")
                 string = f"{fstring_start.value}{fstring_middle}{end}"
-                strings.append(literal_eval(string))
+                obj = literal_eval(string)
+                if not isinstance(obj, str):
+                    raise TypeError(f"Unexpected object: {obj!r}")
+                strings.append(obj)
             elif node.type == token.STRING:
                 if i == 0:
                     prefix = _string_prefix(node)
@@ -1276,7 +1281,7 @@ class Compiler(Visitor[ast.AST]):
         visit_term
     ) = visit_expr
 
-    def visit_comparison(self, node: Node) -> ast.AST:
+    def visit_comparison(self, node: Node) -> ast.expr:
         left = self.visit_typed(node.children[0], ast.expr)
         ops: list[ast.cmpop] = []
         comparators: list[ast.expr] = []
@@ -1307,29 +1312,29 @@ class Compiler(Visitor[ast.AST]):
             left=left, ops=ops, comparators=comparators, **get_line_range(node)
         )
 
-    def visit_star_expr(self, node: Node) -> ast.AST:
+    def visit_star_expr(self, node: Node) -> ast.expr:
         return ast.Starred(
             value=self.visit_typed(node.children[1], ast.expr),
             ctx=self.expr_context,
             **get_line_range(node),
         )
 
-    def visit_not_test(self, node: Node) -> ast.AST:
+    def visit_not_test(self, node: Node) -> ast.expr:
         return ast.UnaryOp(
             op=ast.Not(),
             operand=self.visit_typed(node.children[1], ast.expr),
             **get_line_range(node),
         )
 
-    def visit_and_test(self, node: Node) -> ast.AST:
+    def visit_and_test(self, node: Node) -> ast.expr:
         operands = [self.visit_typed(child, ast.expr) for child in node.children[::2]]
         return ast.BoolOp(op=ast.And(), values=operands, **get_line_range(node))
 
-    def visit_or_test(self, node: Node) -> ast.AST:
+    def visit_or_test(self, node: Node) -> ast.expr:
         operands = [self.visit_typed(child, ast.expr) for child in node.children[::2]]
         return ast.BoolOp(op=ast.Or(), values=operands, **get_line_range(node))
 
-    def visit_test(self, node: Node) -> ast.AST:
+    def visit_test(self, node: Node) -> ast.expr:
         # must be if-else
         assert len(node.children) == 5
         assert isinstance(node.children[1], Leaf) and node.children[1].value == "if"
@@ -1341,7 +1346,7 @@ class Compiler(Visitor[ast.AST]):
             **get_line_range(node),
         )
 
-    def visit_factor(self, node: Node) -> ast.UnaryOp:
+    def visit_factor(self, node: Node) -> ast.expr:
         return ast.UnaryOp(
             op=TOKEN_TYPE_TO_UNARY_OP[node.children[0].type](),
             operand=self.visit_typed(node.children[1], ast.expr),
@@ -1533,7 +1538,7 @@ class Compiler(Visitor[ast.AST]):
         else:
             return [], self._compile_comprehension(node)
 
-    def _compile_named_expr(self, children: Sequence[NL]) -> ast.NamedExpr:
+    def _compile_named_expr(self, children: Sequence[NL]) -> ast.expr:
         with self.set_expr_context(ast.Store()):
             target = self.visit(children[0])
         if not isinstance(target, ast.Name):
@@ -1547,7 +1552,7 @@ class Compiler(Visitor[ast.AST]):
             ),
         )
 
-    def visit_namedexpr_test(self, node: Node) -> ast.NamedExpr:
+    def visit_namedexpr_test(self, node: Node) -> ast.expr:
         return self._compile_named_expr(node.children)
 
     def visit_subscript(self, node: Node) -> Union[ast.expr, ast.Slice]:
@@ -1575,11 +1580,11 @@ class Compiler(Visitor[ast.AST]):
             upper = step = None
         return ast.Slice(lower=lower, upper=upper, step=step, **get_line_range(node))
 
-    def visit_subscriptlist(self, node: Node) -> ast.Tuple:
+    def visit_subscriptlist(self, node: Node) -> ast.expr:
         elts = [self.visit_typed(child, ast.expr) for child in node.children[::2]]
         return ast.Tuple(elts=elts, ctx=self.expr_context, **get_line_range(node))
 
-    def visit_lambdef(self, node: Node) -> ast.Lambda:
+    def visit_lambdef(self, node: Node) -> ast.expr:
         maybe_args = node.children[1]
         if maybe_args.type == token.COLON:
             args = empty_arguments()
@@ -1714,7 +1719,7 @@ class Compiler(Visitor[ast.AST]):
             defaults=defaults,
         )
 
-    def visit_yield_expr(self, node: Node) -> Union[ast.Yield, ast.YieldFrom]:
+    def visit_yield_expr(self, node: Node) -> ast.expr:
         if node.children[1].type == self.syms.yield_arg:
             return ast.YieldFrom(
                 value=self.visit_typed(node.children[1].children[1], ast.expr),
@@ -1878,8 +1883,8 @@ if sys.version_info >= (3, 10):
                 if inner.type != self.syms.dictsetmaker:
                     raise UnsupportedSyntaxError("set in pattern matching")
                 consumer = Consumer(inner.children)
-                keys = []
-                patterns = []
+                keys: list[ast.expr] = []
+                patterns: list[ast.pattern] = []
                 rest = None
                 while not consumer.done():
                     if consumer.consume(token.DOUBLESTAR) is not None:
@@ -1927,7 +1932,7 @@ if sys.version_info >= (3, 10):
                 return ast.MatchValue(value=string, **get_line_range(node))
 
         def _concatenate_joined_strings(self, nodes: Sequence[Leaf]) -> ast.Constant:
-            strings = []
+            strings: list[str] = []
             for node in nodes:
                 if node.type == token.STRING:
                     strings.append(ast.literal_eval(node.value))
