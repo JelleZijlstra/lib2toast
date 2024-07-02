@@ -250,3 +250,59 @@ def test_dataclass() -> None:
         grammar=grammar,
         compiler=compiler,
     )
+
+
+def test_soft_dataclass() -> None:
+    dataclass_path = Path(__file__).parent / "grammars" / "soft-dataclass.txt"
+    grammar = load_grammar(dataclass_path)
+    compiler = DataclassCompiler(grammar=grammar)
+    check_run(
+        """
+        dataclass dataclass:
+            dataclass: int
+            y: int = 0
+        c = dataclass(1)
+        x = c.dataclass
+        y = c.y
+        """,
+        {"x": 1, "y": 0},
+        grammar=grammar,
+        compiler=compiler,
+    )
+    check_run(
+        """
+        dataclass = True
+        dataclass(frozen=dataclass) C:
+            dataclass: int
+            y: int = 0
+        c = C(1)
+        x = c.dataclass
+        y = c.y
+
+        try:
+            c.y = 4
+        except Exception:
+            dataclass = True
+        """,
+        {"x": 1, "y": 0, "dataclass": True},
+        grammar=grammar,
+        compiler=compiler,
+    )
+    check_run(
+        """
+        def dataclass(cls):
+            cls.dataclass = 1
+            return cls
+
+        @dataclass
+        dataclass C:
+            y: int
+
+        c = C(2)
+        x = C.dataclass
+        y = c.y
+        """,
+        {"x": 1, "y": 2},
+        grammar=grammar,
+        compiler=compiler,
+    )
