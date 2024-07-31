@@ -190,6 +190,10 @@ def test_fstring() -> None:
     assert_compiles(r'rf"\{{"')
     assert_compiles("x = f'a'")
     assert_compiles('u"" f"x"')
+    assert_compiles('f"""x"""')
+    assert_compiles("f'''x'''")
+    assert_compiles('f"""x{"y"}z"""')
+    assert_compiles('f"""x"{y}"z"""')
 
 
 def test_byte_string() -> None:

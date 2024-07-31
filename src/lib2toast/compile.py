@@ -1245,11 +1245,14 @@ class Compiler(Visitor[ast.AST]):
             elif isinstance(node, tuple):
                 fstring_start, fstring_middle = node
                 end = fstring_start.value.lstrip("rRfF")
-                string = f"{fstring_start.value}{fstring_middle}{end}"
+                # Add an extra space at the end, because otherwise if the
+                # start is triple-quoted and the middle ends in one of the quotes,
+                # the string will be invalid.
+                string = f"{fstring_start.value}{fstring_middle} {end}"
                 obj = literal_eval(string)
                 if not isinstance(obj, str):
                     raise TypeError(f"Unexpected object: {obj!r}")
-                strings.append(obj)
+                strings.append(obj[:-1])
             elif node.type == token.STRING:
                 if i == 0:
                     prefix = _string_prefix(node)
