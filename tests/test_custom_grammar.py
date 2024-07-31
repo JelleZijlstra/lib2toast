@@ -325,6 +325,7 @@ class RangeLiteralCompiler(Compiler):
             rhs_node = trailer.children[3]
             line_range = unify_line_ranges(begin_range, get_line_range(trailer))
             rhs = self.visit(rhs_node)
+            assert isinstance(rhs, ast.expr)
             return ast.Call(
                 func=ast.Name(id="range", ctx=ast.Load(), **line_range),
                 args=[parent, rhs],
