@@ -174,6 +174,7 @@ def test_fstring() -> None:
     assert_compiles('f"{a!s:a}"')
     assert_compiles('f"{a!s:}"')
     assert_compiles('f"{a:{a}}"')
+    assert_compiles('f"x{a:y{a}z}b"')
     assert_compiles('f"{a=}"')
     assert_compiles('f"{a=:b}"')
     assert_compiles('f"{a=}" "b"')
@@ -276,6 +277,7 @@ def test_simple_statements() -> None:
     assert_compiles("break")
     assert_compiles("continue")
     assert_compiles("a; b")
+    assert_compiles("a;")
 
 
 def test_raise() -> None:

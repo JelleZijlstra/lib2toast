@@ -93,6 +93,7 @@ Check the "Issues" tab for potential areas to contribute.
 
 ### Unreleased
 
+- Fix crash on statement ending in a semicolon
 - Fix crash on certain triple-quoted f-strings
 - Fix miscompilation of calls with arguments on the left-hand side of an assignment
 - Make it easier to create a dialect with more kinds of trailers
