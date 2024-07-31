@@ -1409,7 +1409,8 @@ class Compiler(Visitor[ast.AST]):
                 args: list[ast.expr] = []
                 keywords: list[ast.keyword] = []
             else:
-                args, keywords = self._compile_arglist(trailer.children[1], trailer)
+                with self.set_expr_context(ast.Load()):
+                    args, keywords = self._compile_arglist(trailer.children[1], trailer)
             return ast.Call(
                 func=parent,
                 args=args,
