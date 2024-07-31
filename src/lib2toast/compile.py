@@ -54,7 +54,7 @@ class Visitor(Generic[T]):
 
     def generic_visit(self, node: NL) -> T:
         raise NotImplementedError(
-            f"visit_{self.get_node_name(node)} on line {node.lineno}"
+            f"visit_{self.get_node_name(node)} on line {node.get_lineno()}"
         )
 
     def visit_typed(self, node: NL, typ: type[U]) -> U:
