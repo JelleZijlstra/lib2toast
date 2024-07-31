@@ -88,3 +88,14 @@ Contributions to this project are welcome, including ideas for new ways to
 use the core functionality of the library.
 
 Check the "Issues" tab for potential areas to contribute.
+
+## Release notes
+
+### Unreleased
+
+- Make it easier to create a dialect with more kinds of trailers
+- Adjust some type annotations to make subclassing easier
+
+### Version 0.0.1 (July 1, 2024)
+
+Initial release.

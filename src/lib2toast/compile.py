@@ -1391,49 +1391,57 @@ class Compiler(Visitor[ast.AST]):
                 ctx = self.expr_context
             else:
                 ctx = ast.Load()
-            if trailer.children[0].type == token.LPAR:  # call
-                if len(trailer.children) == 2:
-                    args: list[ast.expr] = []
-                    keywords: list[ast.keyword] = []
-                else:
-                    args, keywords = self._compile_arglist(trailer.children[1], trailer)
-                atom = ast.Call(
-                    func=atom,
-                    args=args,
-                    keywords=keywords,
-                    **unify_line_ranges(
-                        begin_range, get_line_range(trailer.children[-1])
-                    ),
-                )
-            elif trailer.children[0].type == token.LSQB:  # subscript
-                line_range = unify_line_ranges(
-                    begin_range, get_line_range(trailer.children[-1])
-                )
-                with self.set_expr_context(ast.Load()):
-                    subscript = self.visit_typed(trailer.children[1], ast.expr)
-                if isinstance(subscript, ast.Starred):
-                    subscript = ast.Tuple(
-                        elts=[subscript],
-                        ctx=ast.Load(),
-                        **get_line_range(trailer.children[1]),
-                    )
-                atom = ast.Subscript(value=atom, slice=subscript, ctx=ctx, **line_range)
-            elif trailer.children[0].type == token.DOT:  # attribute
-                assert (
-                    isinstance(trailer.children[1], Leaf)
-                    and trailer.children[1].type == token.NAME
-                )
-                atom = ast.Attribute(
-                    value=atom,
-                    attr=trailer.children[1].value,
-                    ctx=ctx,
-                    **unify_line_ranges(
-                        begin_range, get_line_range(trailer.children[1])
-                    ),
-                )
-            else:
-                raise NotImplementedError(repr(trailer))
+            atom = self.compile_trailer(
+                trailer, parent=atom, ctx=ctx, begin_range=begin_range
+            )
         return atom
+
+    def compile_trailer(
+        self,
+        trailer: NL,
+        *,
+        parent: ast.expr,
+        ctx: ast.expr_context,
+        begin_range: LineRange,
+    ) -> ast.expr:
+        if trailer.children[0].type == token.LPAR:  # call
+            if len(trailer.children) == 2:
+                args: list[ast.expr] = []
+                keywords: list[ast.keyword] = []
+            else:
+                args, keywords = self._compile_arglist(trailer.children[1], trailer)
+            return ast.Call(
+                func=parent,
+                args=args,
+                keywords=keywords,
+                **unify_line_ranges(begin_range, get_line_range(trailer.children[-1])),
+            )
+        elif trailer.children[0].type == token.LSQB:  # subscript
+            line_range = unify_line_ranges(
+                begin_range, get_line_range(trailer.children[-1])
+            )
+            with self.set_expr_context(ast.Load()):
+                subscript = self.visit_typed(trailer.children[1], ast.expr)
+            if isinstance(subscript, ast.Starred):
+                subscript = ast.Tuple(
+                    elts=[subscript],
+                    ctx=ast.Load(),
+                    **get_line_range(trailer.children[1]),
+                )
+            return ast.Subscript(value=parent, slice=subscript, ctx=ctx, **line_range)
+        elif trailer.children[0].type == token.DOT:  # attribute
+            assert (
+                isinstance(trailer.children[1], Leaf)
+                and trailer.children[1].type == token.NAME
+            )
+            return ast.Attribute(
+                value=parent,
+                attr=trailer.children[1].value,
+                ctx=ctx,
+                **unify_line_ranges(begin_range, get_line_range(trailer.children[1])),
+            )
+        else:
+            raise NotImplementedError(repr(trailer))
 
     def _compile_arglist(
         self, node: NL, parent_node: NL

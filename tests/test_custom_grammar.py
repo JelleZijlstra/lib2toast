@@ -306,3 +306,46 @@ def test_soft_dataclass() -> None:
         grammar=grammar,
         compiler=compiler,
     )
+
+
+class RangeLiteralCompiler(Compiler):
+    def compile_trailer(
+        self,
+        trailer: NL,
+        *,
+        parent: ast.expr,
+        ctx: ast.expr_context,
+        begin_range: LineRange,
+    ) -> ast.expr:
+        if (
+            trailer.children[0].type == token.DOT
+            and trailer.children[1].type == token.DOT
+        ):
+            assert trailer.children[2].type == token.DOT
+            rhs_node = trailer.children[3]
+            line_range = unify_line_ranges(begin_range, get_line_range(trailer))
+            rhs = self.visit(rhs_node)
+            assert isinstance(rhs, ast.expr)
+            return ast.Call(
+                func=ast.Name(id="range", ctx=ast.Load(), **line_range),
+                args=[parent, rhs],
+                keywords=[],
+                **line_range,
+            )
+        return super().compile_trailer(
+            trailer, parent=parent, ctx=ctx, begin_range=begin_range
+        )
+
+
+def test_range_literal() -> None:
+    dataclass_path = Path(__file__).parent / "grammars" / "range-literal.txt"
+    grammar = load_grammar(dataclass_path)
+    compiler = RangeLiteralCompiler(grammar=grammar)
+    check_run(
+        """
+        x = 1 ... 2  # must be spaced or it gets tokenized wrong
+        """,
+        {"x": range(1, 2)},
+        grammar=grammar,
+        compiler=compiler,
+    )
