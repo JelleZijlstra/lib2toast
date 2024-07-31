@@ -53,7 +53,9 @@ class Visitor(Generic[T]):
         return method(node)
 
     def generic_visit(self, node: NL) -> T:
-        raise NotImplementedError(f"visit_{self.get_node_name(node)}")
+        raise NotImplementedError(
+            f"visit_{self.get_node_name(node)} on line {node.get_lineno()}"
+        )
 
     def visit_typed(self, node: NL, typ: type[U]) -> U:
         result = self.visit(node)
@@ -391,6 +393,8 @@ class Compiler(Visitor[ast.AST]):
     def compile_simple_stmt(self, node: Node) -> list[ast.stmt]:
         statements: list[ast.stmt] = []
         for child in node.children[::2]:
+            if child.type == token.NEWLINE:
+                continue
             val = self.visit(child)
             if isinstance(val, ast.expr):
                 statements.append(ast.Expr(val, **get_line_range(child)))
@@ -1249,7 +1253,12 @@ class Compiler(Visitor[ast.AST]):
                 # start is triple-quoted and the middle ends in one of the quotes,
                 # the string will be invalid.
                 string = f"{fstring_start.value}{fstring_middle} {end}"
-                obj = literal_eval(string)
+                try:
+                    obj = literal_eval(string)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Invalid f-string: {string!r} at {fstring_start.lineno}"
+                    ) from e
                 if not isinstance(obj, str):
                     raise TypeError(f"Unexpected object: {obj!r}")
                 strings.append(obj[:-1])
