@@ -587,10 +587,19 @@ class Compiler(Visitor[ast.AST]):
     def compile_suite(self, node: NL) -> tuple[list[ast.stmt], LineRange]:
         if isinstance(node, Node) and node.type == self.syms.suite:
             statements = self.compile_statement_list(node.children[2:-1])
-            return statements, get_line_range_for_ast(statements[-1])
+            return statements, self.get_suite_end_line_range(node)
         else:
             statements = self.compile_statement_list([node])
             return statements, get_line_range(node, ignore_last_leaf=True)
+
+    def get_suite_end_line_range(self, node: NL) -> LineRange:
+        if isinstance(node, Leaf):
+            return get_line_range_for_leaf(node)
+        for child in reversed(node.children):
+            if isinstance(child, Leaf) and child.type in (token.DEDENT, token.NEWLINE):
+                continue
+            return self.get_suite_end_line_range(child)
+        raise RuntimeError("No end line range found")
 
     def consume_and_compile_suite(
         self, consumer: Consumer

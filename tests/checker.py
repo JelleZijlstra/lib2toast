@@ -29,7 +29,11 @@ def assert_compiles(code: str) -> None:
 
 
 def check_file(path: Path) -> bool:
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        print(f"Ignoring invalid encoding in {path}")
+        return True
     try:
         ast_code = ast.parse(text)
     except SyntaxError:
