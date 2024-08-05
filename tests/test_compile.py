@@ -287,6 +287,8 @@ def test_assignment() -> None:
     assert_compiles("a[b]: int = e")
     assert_compiles("a(b).c = d")
 
+
+def test_augmented_assignment() -> None:
     assert_compiles("a += b")
     assert_compiles("a -= b")
     assert_compiles("a *= b")
@@ -300,6 +302,7 @@ def test_assignment() -> None:
     assert_compiles("a ^= b")
     assert_compiles("a |= b")
     assert_compiles("a.b += c")
+    assert_compiles("a += b,")
 
 
 def test_del() -> None:
