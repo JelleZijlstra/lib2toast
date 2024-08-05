@@ -139,16 +139,10 @@ def test_atom() -> None:
     assert_compiles("[1]")
     assert_compiles("[*1]")
     assert_compiles("[1, 2]")
-    assert_compiles("[1 for a in b]")
-    assert_compiles("[1 for a in b for c in d]")
-    assert_compiles("[1 for a in b if c]")
     assert_compiles("{}")
     assert_compiles("{1}")
     assert_compiles("{1: 2}")
     assert_compiles("{1: 2, 3: 4}")
-    assert_compiles("{1: 2 for a in b}")
-    assert_compiles("{1: 2 for a in b for c in d}")
-    assert_compiles("{1: 2 for a in b if c}")
     assert_compiles("{1, 2}")
     assert_compiles("{**a}")
     assert_compiles("{1: 2, **a}")
@@ -157,7 +151,29 @@ def test_atom() -> None:
     assert_compiles("(1,)")
     assert_compiles("(1, 2)")
     assert_compiles("(1, 2,)")
+
+
+def test_comprehensions() -> None:
+    assert_compiles("[1 for a in b]")
+    assert_compiles("[1 for a in b for c in d]")
+    assert_compiles("[1 for a in b if e for c in d]")
+    assert_compiles("[1 for a in b if c]")
+    assert_compiles("{1: 2 for a in b}")
+    assert_compiles("{1: 2 for a in b for c in d}")
+    assert_compiles("{1: 2 for a in b if c}")
     assert_compiles("(1 for a in b)")
+
+
+def test_async_comprehensions() -> None:
+    assert_compiles("[1 async for a in b]")
+    assert_compiles("[1 async for a in b for c in d]")
+    assert_compiles("[1 async for a in b async for c in d]")
+    assert_compiles("[1 async for a in b if e async for c in d]")
+    assert_compiles("[1 async for a in b if c]")
+    assert_compiles("{1: 2 async for a in b}")
+    assert_compiles("{1: 2 async for a in b for c in d}")
+    assert_compiles("{1: 2 async for a in b if c}")
+    assert_compiles("(1 async for a in b)")
 
 
 def test_fstring() -> None:
