@@ -180,7 +180,9 @@ def extract_name(node: NL) -> str:
     if isinstance(node, Leaf) and node.type == token.NAME:
         return node.value
     else:
-        raise UnsupportedSyntaxError("Expected an identifier")
+        raise UnsupportedSyntaxError(
+            f"Expected an identifier at line {node.get_lineno()}, but got {node!r}"
+        )
 
 
 TOKEN_TYPE_TO_BINOP = {
@@ -1554,8 +1556,12 @@ class Compiler(Visitor[ast.AST]):
     def _compile_comp_iter(
         self, node: Node
     ) -> tuple[list[ast.expr], list[ast.comprehension]]:
-        keyword = extract_name(node.children[0])
-        if keyword == "if":
+        keyword = node.children[0]
+        if (
+            isinstance(keyword, Leaf)
+            and keyword.type == token.NAME
+            and keyword.value == "if"
+        ):
             test = self.visit(node.children[1])
             assert isinstance(test, ast.expr)
             if len(node.children) > 2:
