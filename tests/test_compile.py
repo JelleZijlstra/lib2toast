@@ -199,7 +199,9 @@ def test_fstring() -> None:
         r"""
         f"x\
         {y}"
-        """
+        """,
+        # On 3.9 some of the column offsets are wrong in CPython
+        include_attributes=sys.version_info >= (3, 10),
     )
     assert_compiles(
         """
@@ -213,9 +215,13 @@ def test_fstring() -> None:
             f"sdfsdf \\
                     s {a}"
         )
-        """
+        """,
+        include_attributes=sys.version_info >= (3, 10),
     )
-    assert_compiles('a(\n    f"sdfsdf \\\n            s {a}"\n)\n')
+    assert_compiles(
+        'a(\n    f"sdfsdf \\\n            s {a}"\n)\n',
+        include_attributes=sys.version_info >= (3, 10),
+    )
 
 
 def test_byte_string() -> None:
