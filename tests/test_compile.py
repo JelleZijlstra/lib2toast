@@ -195,6 +195,33 @@ def test_fstring() -> None:
     assert_compiles("f'''x'''")
     assert_compiles('f"""x{"y"}z"""')
     assert_compiles('f"""x"{y}"z"""')
+    assert_compiles(
+        r"""
+        f"x\
+        {y}"
+        """,
+        # On 3.9 some of the column offsets are wrong in CPython
+        include_attributes=sys.version_info >= (3, 10),
+    )
+    assert_compiles(
+        """
+        f"x\
+        aaaa{y}"
+        """
+    )
+    assert_compiles(
+        """
+        a(
+            f"sdfsdf \\
+                    s {a}"
+        )
+        """,
+        include_attributes=sys.version_info >= (3, 10),
+    )
+    assert_compiles(
+        'a(\n    f"sdfsdf \\\n            s {a}"\n)\n',
+        include_attributes=sys.version_info >= (3, 10),
+    )
 
 
 def test_byte_string() -> None:
@@ -604,6 +631,17 @@ def test_starred() -> None:
     assert_compiles("a = (*b, *c)")
     assert_compiles("a = [*b]")
     assert_compiles("a = {x, *c}")
+
+
+def test_semicolon() -> None:
+    assert_compiles("a;")
+    assert_compiles(
+        """
+        if 1:
+            a;
+        """
+    )
+    assert_compiles("a();")
 
 
 if sys.version_info >= (3, 10):

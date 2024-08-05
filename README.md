@@ -93,6 +93,7 @@ Check the "Issues" tab for potential areas to contribute.
 
 ### Unreleased
 
+- Fix incorrect line ranges in suites containing statements ending in a semicolon
 - Fix crash on statement ending in a semicolon
 - Fix crash on certain triple-quoted f-strings
 - Fix miscompilation of calls with arguments on the left-hand side of an assignment

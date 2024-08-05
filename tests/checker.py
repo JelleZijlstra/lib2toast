@@ -10,17 +10,21 @@ from pathlib import Path
 from lib2toast.api import compile
 
 
-def assert_compiles(code: str) -> None:
+def assert_compiles(code: str, *, include_attributes: bool = True) -> None:
     code = textwrap.dedent(code)
     ast_code = ast.parse(code)
     our_code = compile(code)
-    if ast.dump(our_code, include_attributes=True, indent=2) != ast.dump(
-        ast_code, include_attributes=True, indent=2
+    if ast.dump(our_code, include_attributes=include_attributes, indent=2) != ast.dump(
+        ast_code, include_attributes=include_attributes, indent=2
     ):
         diff = "\n".join(
             difflib.unified_diff(
-                ast.dump(our_code, include_attributes=True, indent=2).splitlines(),
-                ast.dump(ast_code, include_attributes=True, indent=2).splitlines(),
+                ast.dump(
+                    our_code, include_attributes=include_attributes, indent=2
+                ).splitlines(),
+                ast.dump(
+                    ast_code, include_attributes=include_attributes, indent=2
+                ).splitlines(),
                 "lib2toast",
                 "ast",
             )
@@ -29,7 +33,11 @@ def assert_compiles(code: str) -> None:
 
 
 def check_file(path: Path) -> bool:
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        print(f"Ignoring invalid encoding in {path}")
+        return True
     try:
         ast_code = ast.parse(text)
     except SyntaxError:
