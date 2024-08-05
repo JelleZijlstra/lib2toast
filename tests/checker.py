@@ -40,7 +40,7 @@ def check_file(path: Path) -> bool:
         return True
     try:
         ast_code = ast.parse(text)
-    except SyntaxError:
+    except (ValueError, SyntaxError):
         print(f"Ignoring invalid syntax in {path}")
         traceback.print_exc()
         return True
