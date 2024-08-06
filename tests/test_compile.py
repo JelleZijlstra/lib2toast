@@ -958,3 +958,42 @@ if sys.version_info >= (3, 10):
                     pass
             """
         )
+
+
+def test_unicode_identifier() -> None:
+    assert_compiles("r𝔢tur𝔫")
+    assert_compiles("𝔘𝔫𝔦𝔠𝔬𝔡𝔢 = 1")
+    assert_compiles("f(𝔘𝔫𝔦𝔠𝔬𝔡𝔢=1)")
+    assert_compiles("def 𝔘𝔫𝔦𝔠𝔬𝔡𝔢(𝔘𝔫𝔦𝔠𝔬𝔡𝔢): pass")
+    assert_compiles("async def 𝔘𝔫𝔦𝔠𝔬𝔡𝔢(𝔘𝔫𝔦𝔠𝔬𝔡𝔢=3): pass")
+    assert_compiles("class 𝔘𝔫𝔦𝔠𝔬𝔡𝔢: pass")
+    assert_compiles("x.𝔘𝔫𝔦𝔠𝔬𝔡𝔢 = 1")
+    assert_compiles("import 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
+    assert_compiles("from 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 import 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 as 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
+    assert_compiles("global 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
+    assert_compiles("nonlocal 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
+    if sys.version_info >= (3, 10):
+        assert_compiles(
+            """
+            match x:
+                case int() as 𝔘𝔫𝔦𝔠𝔬𝔡𝔢:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match x:
+                case [int(), *𝔘𝔫𝔦𝔠𝔬𝔡𝔢]:
+                    pass
+            """
+        )
+        assert_compiles(
+            """
+            match x:
+                case {"a": int(), **𝔘𝔫𝔦𝔠𝔬𝔡𝔢}:
+                    pass
+            """
+        )
+    if sys.version_info >= (3, 12):
+        assert_compiles("type 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 = int")
+        assert_compiles("def f[𝔘𝔫𝔦𝔠𝔬𝔡𝔢](): pass")
