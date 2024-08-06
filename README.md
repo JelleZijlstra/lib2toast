@@ -91,7 +91,7 @@ Check the "Issues" tab for potential areas to contribute.
 
 ## Release notes
 
-### Unreleased
+### Version 0.1.0 (August 6, 2024)
 
 - Fix miscompilation of Unicode identifiers; they are now NFKC-normalized
 - Fix crash on augmented assignment with an unparenthesized tuple on the right-hand side
