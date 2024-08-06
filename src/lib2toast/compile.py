@@ -4,6 +4,7 @@ import ast
 import re
 import sys
 import types
+import unicodedata
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -128,6 +129,11 @@ def unify_line_ranges(begin_range: LineRange, end_range: LineRange) -> LineRange
     )
 
 
+def normalize(text: str) -> str:
+    # https://docs.python.org/3/reference/lexical_analysis.html#identifiers
+    return unicodedata.normalize("NFKC", text)
+
+
 def literal_eval(s: str) -> object:
     """Like ast.literal_eval but supports f-strings without placeholders."""
     tree = ast.parse(s, mode="eval")
@@ -178,7 +184,7 @@ def _string_prefix(leaf: Leaf) -> set[str]:
 
 def extract_name(node: NL) -> str:
     if isinstance(node, Leaf) and node.type == token.NAME:
-        return node.value
+        return normalize(node.value)
     else:
         raise UnsupportedSyntaxError(
             f"Expected an identifier at line {node.get_lineno()}, but got {node!r}"
@@ -492,7 +498,7 @@ class Compiler(Visitor[ast.AST]):
         names: list[str] = []
         for name_node in node.children[1::2]:
             assert isinstance(name_node, Leaf)
-            names.append(name_node.value)
+            names.append(normalize(name_node.value))
         assert isinstance(node.children[0], Leaf)
         if node.children[0].value == "global":
             return ast.Global(names=names, **get_line_range(node))
@@ -1461,7 +1467,7 @@ class Compiler(Visitor[ast.AST]):
             )
             return ast.Attribute(
                 value=parent,
-                attr=trailer.children[1].value,
+                attr=normalize(trailer.children[1].value),
                 ctx=ctx,
                 **unify_line_ranges(begin_range, get_line_range(trailer.children[1])),
             )
@@ -1660,7 +1666,7 @@ class Compiler(Visitor[ast.AST]):
             if isinstance(tok, Leaf) and tok.type == token.NAME:
                 current_args.append(
                     ast.arg(
-                        arg=tok.value,
+                        arg=normalize(tok.value),
                         annotation=None,
                         type_comment=None,
                         **get_line_range(tok),
@@ -1704,12 +1710,12 @@ class Compiler(Visitor[ast.AST]):
                     raise UnsupportedSyntaxError("Multiple **kwargs")
                 args_node = consumer.expect()
                 if isinstance(args_node, Leaf):
-                    name = args_node.value
+                    name = normalize(args_node.value)
                     annotation = None
                 else:
                     assert args_node.type == self.syms.tname
                     assert isinstance(args_node.children[0], Leaf)
-                    name = args_node.children[0].value
+                    name = normalize(args_node.children[0].value)
                     annotation = self.visit_typed(args_node.children[2], ast.expr)
                 kwarg = ast.arg(
                     arg=name,
@@ -1727,12 +1733,12 @@ class Compiler(Visitor[ast.AST]):
                         raise UnsupportedSyntaxError("Multiple *args")
                     args_node = consumer.expect()
                     if isinstance(args_node, Leaf):
-                        name = args_node.value
+                        name = normalize(args_node.value)
                         annotation = None
                     else:
                         assert args_node.type == self.syms.tname_star
                         assert isinstance(args_node.children[0], Leaf)
-                        name = args_node.children[0].value
+                        name = normalize(args_node.children[0].value)
                         annotation = self.visit_typed(args_node.children[2], ast.expr)
                     vararg = ast.arg(
                         arg=name,
@@ -1787,7 +1793,7 @@ class Compiler(Visitor[ast.AST]):
             return ast.Constant(value=True, **line_range)
         elif leaf.value == "False":
             return ast.Constant(value=False, **line_range)
-        return ast.Name(id=leaf.value, ctx=self.expr_context, **line_range)
+        return ast.Name(id=normalize(leaf.value), ctx=self.expr_context, **line_range)
 
     def visit_NUMBER(self, leaf: Leaf) -> ast.Constant:
         return ast.Constant(value=ast.literal_eval(leaf.value), **get_line_range(leaf))

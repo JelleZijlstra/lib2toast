@@ -93,6 +93,7 @@ Check the "Issues" tab for potential areas to contribute.
 
 ### Unreleased
 
+- Fix miscompilation of Unicode identifiers; they are now NFKC-normalized
 - Fix crash on augmented assignment with an unparenthesized tuple on the right-hand side
 - Fix crash on nested async comprehensions
 - Fix incorrect line ranges in suites containing statements ending in a semicolon
