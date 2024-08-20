@@ -9,6 +9,7 @@ from blib2to3 import pygram
 from blib2to3.pgen2 import token
 from blib2to3.pgen2.grammar import Grammar
 from blib2to3.pytree import NL, Node
+
 from lib2toast.api import load_grammar, run
 from lib2toast.compile import (
     Compiler,

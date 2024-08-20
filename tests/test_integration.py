@@ -1,8 +1,9 @@
 from collections.abc import Iterable
 from pathlib import Path
 
-import lib2toast
 import pytest
+
+import lib2toast
 
 from .checker import assert_compiles
 
