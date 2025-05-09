@@ -9,7 +9,7 @@ from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Callable, Generic, Optional, TypeVar, Union
+from typing import Any, Callable, Generic, Optional, TypeVar, Union, cast
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
@@ -23,6 +23,14 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 LVB = Union[Leaf, ast.Constant, tuple[Leaf, Leaf]]
+
+
+# In some versions of Python 3.12, the AST for JoinedStr in a replacement field
+# has an extra empty constant.
+_HAS_EXTRA_CONSTANT = (
+    len(cast(Any, ast.parse('f"{a:{a}}"').body[0]).value.values[0].format_spec.values)
+    == 2
+)
 
 
 class UnsupportedSyntaxError(Exception):
@@ -1233,7 +1241,7 @@ class Compiler(Visitor[ast.AST]):
             )
             if last_value_bits:
                 values.append(self._concatenate_joined_strings(last_value_bits))
-            elif values and sys.version_info >= (3, 12) and sys.version_info < (3, 13):
+            elif values and _HAS_EXTRA_CONSTANT:
                 # there's always an empty Constant for some reason
                 prev_line_range = get_line_range(node.children[-2])
                 next_line_range = get_line_range(node.children[-1])

@@ -30,8 +30,7 @@ lint.select = [
 ]
 
 lint.ignore = [
-  "ANN101",  # missing type annotation for self in method
-  "ANN102",  # missing type annotation for cls in classmethod
+  "A004",
   "FA100",
   "D102",
   "D101",
@@ -75,13 +74,14 @@ lint.ignore = [
   "PLC0414",
   "B008",
   "S102",
+  "TC006",
 ]
 
 line-length = 100
 target-version = "py39"
 
 [tool.black]
-target-version = ['py39', 'py310', 'py311', 'py312']
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
 include = '\.py$'
 skip-magic-trailing-comma = true
 
