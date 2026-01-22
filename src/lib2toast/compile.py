@@ -5,11 +5,11 @@ import re
 import sys
 import types
 import unicodedata
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Callable, Generic, Optional, TypeVar, Union, cast
+from typing import Any, Generic, Optional, TypeVar, Union, cast
 
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
@@ -117,7 +117,7 @@ def _get_line_range_for_lvb(node: LVB) -> LineRange:
         return get_line_range_for_ast(node)
 
 
-def get_line_range_for_ast(node: Union[ast.expr, ast.stmt]) -> LineRange:
+def get_line_range_for_ast(node: ast.expr | ast.stmt) -> LineRange:
     assert node.end_lineno is not None
     assert node.end_col_offset is not None
     return LineRange(
@@ -252,7 +252,7 @@ class Consumer:
     children: Sequence[NL]
     index: int = 0
 
-    def consume(self, typ: Optional[int] = None) -> Optional[NL]:
+    def consume(self, typ: int | None = None) -> NL | None:
         if self.index < len(self.children) and (
             typ is None or self.children[self.index].type == typ
         ):
@@ -262,14 +262,14 @@ class Consumer:
         else:
             return None
 
-    def consume_name(self, name: str) -> Optional[Leaf]:
+    def consume_name(self, name: str) -> Leaf | None:
         node = self.consume(token.NAME)
         if node is not None and isinstance(node, Leaf) and node.value == name:
             return node
         else:
             return None
 
-    def expect(self, typ: Optional[int] = None) -> NL:
+    def expect(self, typ: int | None = None) -> NL:
         node = self.consume(typ)
         if node is None:
             raise RuntimeError(f"Expected {typ}")
@@ -442,7 +442,7 @@ class Compiler(Visitor[ast.AST]):
             )
         elif consumer.consume(token.EQUAL) is not None:
             exprs: list[ast.expr] = []
-            rhs: Optional[ast.expr] = None
+            rhs: ast.expr | None = None
             while True:
                 child = consumer.expect()
                 if consumer.index < len(node.children):
@@ -502,7 +502,7 @@ class Compiler(Visitor[ast.AST]):
             **get_line_range(node),
         )
 
-    def visit_global_stmt(self, node: Node) -> Union[ast.Global, ast.Nonlocal]:
+    def visit_global_stmt(self, node: Node) -> ast.Global | ast.Nonlocal:
         names: list[str] = []
         for name_node in node.children[1::2]:
             assert isinstance(name_node, Leaf)
@@ -708,7 +708,7 @@ class Compiler(Visitor[ast.AST]):
 
     def _compile_if_recursive(
         self, consumer: Consumer
-    ) -> tuple[list[ast.stmt], Optional[LineRange]]:
+    ) -> tuple[list[ast.stmt], LineRange | None]:
         if consumer.done():
             return [], None
         keyword_node = consumer.expect(token.NAME)
@@ -969,9 +969,7 @@ class Compiler(Visitor[ast.AST]):
             )
 
     # Expressions
-    def visit_exprlist(
-        self, node: Node, parent_node: Optional[Node] = None
-    ) -> ast.expr:
+    def visit_exprlist(self, node: Node, parent_node: Node | None = None) -> ast.expr:
         if parent_node is None:
             parent_node = node
         if node.children[1].type == self.syms.old_comp_for:
@@ -1025,7 +1023,7 @@ class Compiler(Visitor[ast.AST]):
                 )
             consumer = Consumer(inner.children)
             is_dict = False
-            keys: list[Optional[ast.expr]] = []
+            keys: list[ast.expr | None] = []
             values: list[ast.expr] = []
             elts: list[ast.expr] = []
             while not consumer.done():
@@ -1173,7 +1171,7 @@ class Compiler(Visitor[ast.AST]):
         self,
         children: Sequence[NL],
         last_value_bits: list[LVB],
-        start_leaf: Optional[Leaf],
+        start_leaf: Leaf | None,
     ) -> tuple[list[ast.expr], list[LVB]]:
         values: list[ast.expr] = []
         for child in children:
@@ -1203,7 +1201,7 @@ class Compiler(Visitor[ast.AST]):
 
     def compile_fstring_replacement_field(
         self, node: Node, fstring_start: Leaf
-    ) -> tuple[Optional[ast.Constant], ast.FormattedValue]:
+    ) -> tuple[ast.Constant | None, ast.FormattedValue]:
         consumer = Consumer(node.children)
         consumer.expect(token.LBRACE)
         expr_node = consumer.expect()
@@ -1607,7 +1605,7 @@ class Compiler(Visitor[ast.AST]):
     def visit_namedexpr_test(self, node: Node) -> ast.expr:
         return self._compile_named_expr(node.children)
 
-    def visit_subscript(self, node: Node) -> Union[ast.expr, ast.Slice]:
+    def visit_subscript(self, node: Node) -> ast.expr | ast.Slice:
         consumer = Consumer(node.children)
         if consumer.consume(token.COLON) is None:
             lower = self.visit_typed(consumer.expect(), ast.expr)
@@ -1662,7 +1660,7 @@ class Compiler(Visitor[ast.AST]):
         args: list[ast.arg] = []
         vararg = None
         kwonlyargs: list[ast.arg] = []
-        kw_defaults: list[Optional[ast.expr]] = []
+        kw_defaults: list[ast.expr | None] = []
         kwarg = None
         defaults: list[ast.expr] = []
         current_args = args
@@ -1857,7 +1855,7 @@ if sys.version_info >= (3, 10):
             return ast.MatchSequence(patterns=patterns, **get_line_range(node))
 
         def visit_testlist_gexp(
-            self, node: Node, parent_node: Optional[Node] = None
+            self, node: Node, parent_node: Node | None = None
         ) -> ast.MatchSequence:
             if parent_node is None:
                 parent_node = node
