@@ -10,7 +10,7 @@ authors = [
 ]
 description = "Compiling a lib2to3 CST to a Python AST"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -78,10 +78,10 @@ lint.ignore = [
 ]
 
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.black]
-target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+target-version = ['py310', 'py311', 'py312', 'py313', 'py314']
 include = '\.py$'
 skip-magic-trailing-comma = true
 

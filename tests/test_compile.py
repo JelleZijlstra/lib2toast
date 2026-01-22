@@ -129,9 +129,8 @@ def test_subscript() -> None:
     assert_compiles("a[::2]")
     if sys.version_info >= (3, 11):
         assert_compiles("a[*b]")
-    if sys.version_info >= (3, 10):
-        assert_compiles("a[b:=10]")
-        assert_compiles("a[b:=10, c:=20]")
+    assert_compiles("a[b:=10]")
+    assert_compiles("a[b:=10, c:=20]")
 
 
 def test_atom() -> None:
@@ -221,12 +220,10 @@ def test_fstring() -> None:
         # On 3.9 some of the column offsets are wrong in CPython
         include_attributes=sys.version_info >= (3, 10),
     )
-    assert_compiles(
-        """
+    assert_compiles("""
         f"x\
         aaaa{y}"
-        """
-    )
+        """)
     assert_compiles(
         """
         a(
@@ -409,14 +406,11 @@ def test_if() -> None:
     assert_compiles("if a: pass\nelif b: pass")
     assert_compiles("if a: pass\nelif b: pass\nelse: pass")
     assert_compiles("if a: 1")
-    assert_compiles(
-        """
+    assert_compiles("""
         if a:
             pass
-        """
-    )
-    assert_compiles(
-        """
+        """)
+    assert_compiles("""
         if a:
             1
             pass
@@ -426,50 +420,41 @@ def test_if() -> None:
         else:
             3
             pass
-        """
-    )
+        """)
 
 
 def test_while() -> None:
     assert_compiles("while a: pass")
     assert_compiles("while a: pass\nelse: pass")
-    assert_compiles(
-        """
+    assert_compiles("""
         while a:
             pass
-        """
-    )
-    assert_compiles(
-        """
+        """)
+    assert_compiles("""
         while a:
             1
             pass
         else:
             2
             pass
-        """
-    )
+        """)
 
 
 def test_for() -> None:
     assert_compiles("for a in b: pass")
     assert_compiles("for a in b: pass\nelse: pass")
-    assert_compiles(
-        """
+    assert_compiles("""
         for a in b:
             pass
-        """
-    )
-    assert_compiles(
-        """
+        """)
+    assert_compiles("""
         for a in b:
             1
             pass
         else:
             2
             pass
-        """
-    )
+        """)
 
 
 def test_with() -> None:
@@ -478,13 +463,11 @@ def test_with() -> None:
     assert_compiles("with a as b, c: pass")
     assert_compiles("with a as b, c as d: pass")
     assert_compiles("with a as b, c as d: 1")
-    assert_compiles(
-        """
+    assert_compiles("""
         with a as b, c as d:
             1
             pass
-        """
-    )
+        """)
     assert_compiles("with (a as b): pass")
     assert_compiles("with (a as b, c as d): pass")
     assert_compiles("with (a as b, c as d,): pass")
@@ -493,22 +476,18 @@ def test_with() -> None:
 def test_async_for() -> None:
     assert_compiles("async for a in b: pass")
     assert_compiles("async for a in b: pass\nelse: pass")
-    assert_compiles(
-        """
+    assert_compiles("""
         async for a in b:
             pass
-        """
-    )
-    assert_compiles(
-        """
+        """)
+    assert_compiles("""
         async for a in b:
             1
             pass
         else:
             2
             pass
-        """
-    )
+        """)
     assert_compiles("with (a, b): pass")
     assert_compiles("with (a := b): pass")
     assert_compiles("with (a := b, c := d): pass")
@@ -523,13 +502,11 @@ def test_async_with() -> None:
     assert_compiles("async with a as b, c: pass")
     assert_compiles("async with a as b, c as d: pass")
     assert_compiles("async with a as b, c as d: 1")
-    assert_compiles(
-        """
+    assert_compiles("""
         async with a as b, c as d:
             1
             pass
-        """
-    )
+        """)
 
 
 def test_try() -> None:
@@ -539,8 +516,7 @@ def test_try() -> None:
     assert_compiles("try: pass\nexcept a as b: pass")
     assert_compiles("try: pass\nexcept a as b: pass\nelse: pass")
     assert_compiles("try: pass\nexcept a as b: pass\nelse: pass\nfinally: pass")
-    assert_compiles(
-        """
+    assert_compiles("""
         try:
             pass
         except a as b:
@@ -549,8 +525,7 @@ def test_try() -> None:
             pass
         finally:
             pass
-        """
-    )
+        """)
 
 
 if sys.version_info >= (3, 11):
@@ -560,8 +535,7 @@ if sys.version_info >= (3, 11):
         assert_compiles("try: pass\nexcept* b: pass")
         assert_compiles("try: pass\nexcept* a as c: pass")
         assert_compiles("try: pass\nexcept* a as b: pass\nelse: pass\nfinally: pass")
-        assert_compiles(
-            """
+        assert_compiles("""
             try:
                 pass
             except* b as c:
@@ -570,8 +544,7 @@ if sys.version_info >= (3, 11):
                 pass
             finally:
                 pass
-            """
-        )
+            """)
 
 
 def test_function_def() -> None:
@@ -615,13 +588,11 @@ def test_class_def() -> None:
         assert_compiles("class A[T, U]: pass")
         assert_compiles("class A[T: int]: pass")
 
-    assert_compiles(
-        """
+    assert_compiles("""
         class A:
             def f():
                 pass
-        """
-    )
+        """)
 
 
 def test_decorators() -> None:
@@ -656,308 +627,229 @@ def test_starred() -> None:
 
 def test_semicolon() -> None:
     assert_compiles("a;")
-    assert_compiles(
-        """
+    assert_compiles("""
         if 1:
             a;
-        """
-    )
+        """)
     assert_compiles("a();")
 
 
-if sys.version_info >= (3, 10):
-
-    def test_match() -> None:
-        assert_compiles(
-            """
+def test_match() -> None:
+    assert_compiles("""
             match a:
                 case b:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case (b):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case "x":
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case 1:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case "x" "y":
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b if c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b as c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case _:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case _ as b:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b, c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b.c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b.c.d:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b.c.d.e:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a, b:
                 case b | c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a,:
                 case b | c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a, b,:
                 case b | c:
                     pass
-            """
-        )
+            """)
 
-    def test_match_sequence() -> None:
-        assert_compiles(
-            """
+
+def test_match_sequence() -> None:
+    assert_compiles("""
             match a:
                 case (b, c):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case (b, c, *d):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case (b, c, *_):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case ():
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case []:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case [b]:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case [b, *c]:
                     pass
-            """
-        )
+            """)
 
-    def test_match_mapping() -> None:
-        assert_compiles(
-            """
+
+def test_match_mapping() -> None:
+    assert_compiles("""
             match a:
                 case {"b": c}:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case {}:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case {"b": c, **d}:
                     pass
-            """
-        )
+            """)
 
-    def test_match_or() -> None:
-        assert_compiles(
-            """
+
+def test_match_or() -> None:
+    assert_compiles("""
             match a:
                 case b | c:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b | c | d:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case b | c | [a, b]:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case (1 as b) | (2 as c) | [a, b]:
                     pass
-            """
-        )
+            """)
 
-    def test_match_class() -> None:
-        assert_compiles(
-            """
+
+def test_match_class() -> None:
+    assert_compiles("""
             match a:
                 case int():
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case int(x):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case int(x, y):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case int(x, y, z=3):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case int(42, z=5):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case int(a as b):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case int(a=re.match(a)):
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case a.b.c(a=b):
                     pass
-            """
-        )
+            """)
 
-    def test_match_numerics() -> None:
-        assert_compiles(
-            """
+
+def test_match_numerics() -> None:
+    assert_compiles("""
             match a:
                 case -1:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match a:
                 case 1+2j:
                     pass
-            """
-        )
+            """)
 
 
 def test_unicode_identifier() -> None:
@@ -972,28 +864,21 @@ def test_unicode_identifier() -> None:
     assert_compiles("from 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 import 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 as 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
     assert_compiles("global 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
     assert_compiles("nonlocal 𝔘𝔫𝔦𝔠𝔬𝔡𝔢")
-    if sys.version_info >= (3, 10):
-        assert_compiles(
-            """
+    assert_compiles("""
             match x:
                 case int() as 𝔘𝔫𝔦𝔠𝔬𝔡𝔢:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match x:
                 case [int(), *𝔘𝔫𝔦𝔠𝔬𝔡𝔢]:
                     pass
-            """
-        )
-        assert_compiles(
-            """
+            """)
+    assert_compiles("""
             match x:
                 case {"a": int(), **𝔘𝔫𝔦𝔠𝔬𝔡𝔢}:
                     pass
-            """
-        )
+            """)
     if sys.version_info >= (3, 12):
         assert_compiles("type 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 = int")
         assert_compiles("def f[𝔘𝔫𝔦𝔠𝔬𝔡𝔢](): pass")

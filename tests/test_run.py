@@ -1,3 +1,4 @@
+import importlib.metadata
 import os
 import textwrap
 from typing import Any
@@ -27,6 +28,10 @@ def test_repr() -> None:
 
 
 def test_py2_except() -> None:
+    # No longer works in Black 25.12.0+ because Python 3.14 again supports
+    # this syntax but with a different meaning.
+    if importlib.metadata.version("black") >= "25.12.0":
+        return
     code = """
         try:
             raise ValueError
