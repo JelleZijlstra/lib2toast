@@ -1271,6 +1271,7 @@ class Compiler(Visitor[ast.AST]):
         kind = None
         for i, node in enumerate(nodes):
             if isinstance(node, ast.Constant):
+                assert isinstance(node.value, str), repr(node)
                 strings.append(node.value)
             elif isinstance(node, tuple):
                 fstring_start, fstring_middle = node
